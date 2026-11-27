@@ -64,14 +64,14 @@ The 401(k) has no tickers, so its funds are matched by name in `K401_MAP` at the
 
 1. **Statements as PDFs:** under Import → Bank or card statement, choose the monthly PDF. The app recognizes the JMCU member statement (Savings and Checking), the Discover it card statement and the Discover savings statement, and puts each row in the right account. Ending balances become net-worth snapshots. CSV and OFX exports also work; for those, pick the account first.
 2. **Savings buckets:** if interest or a transfer changed them, use Goals → Match bank balances.
-3. **Vanguard:** Transaction history → Download → spreadsheet-compatible CSV. Download **one account at a time** (Brokerage, Roth IRA, Cash Plus, 401k plan) and import each with its account selected. The app never reads account numbers, so it can't split a file that covers several accounts. A combined file can still update prices.
+3. **Vanguard:** Transaction history → Download → spreadsheet-compatible CSV. Download **one account at a time** (Brokerage, Roth IRA, Cash Plus) and import each with its account selected. The app never reads account numbers, so it can't split a file that covers several accounts. A combined file can still update prices.
 4. **Inbox:** confirm the imported rows. Matches with your Quick add entries merge automatically. Choosing a category teaches the app that merchant.
 5. **Savings and CD:** type the ending balances under Net worth → Add snapshot.
 6. **Backup:** Settings → Export backup, then save the file to iCloud Drive.
 
 ## Every quarter: 401(k) statement (Ekon Benefits)
 
-The PDF's own text is scrambled, so read it from a picture instead. On the iPhone, screenshot pages 1 and 2, then use Live Text to copy the text. On the Mac, screenshot the pages and copy the text in Preview. Then go to Paystubs & 401k → Add quarterly statement and paste. The app checks that beginning value + contributions + gain = ending value, and that the fund balances add up.
+Download the quarterly PDF from Ekon Benefits (the Roth 401(k) is there, not at Vanguard). In the app, go to **Import → Paystubs and 401(k) statements** (or Paystubs & 401k → Add statements) and choose it. The PDF's own text is scrambled, so the app reads the page image on the device. It checks that beginning value + contributions + gain = ending value, and saves the statement and a net-worth snapshot. Anything that doesn't add up opens for you to check.
 
 ## Savings buckets (Capital One)
 
@@ -79,7 +79,7 @@ Each Capital One savings bucket is a goal on the Goals screen, kept in Discover 
 
 ## Paystubs
 
-Take a screenshot in Ajera. On iPhone, open it in Photos, long-press the text and choose Copy. On the Mac, open it in Preview, select all and copy. Then go to Paystubs & 401k → Add paystub and paste. Check the figures; the app tests that gross minus taxes and deductions equals net pay before saving. If Ajera uses labels the app doesn't recognize, the label list is at the top of `js/import/paystub.js`.
+Download the paystub PDFs from Ajera and choose them under **Import → Paystubs and 401(k) statements** (several at once is fine). They're read on the device; stubs that pass the math check (gross − taxes − deductions + reimbursements = net) save automatically.
 
 ## Privacy
 
