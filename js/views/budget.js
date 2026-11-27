@@ -9,13 +9,16 @@ const isCollege = (m) => m < C.BASELINE_START;
 function render(month = thisMonth(), mode = 'month') {
   const sm = C.monthSummary(month), tm = C.typicalMonth();
   const rows = sm.rows.filter((r) => r.budget || r.spent || r.oneOff).sort((a, b) => (C.cat(a.catId)?.name || '').localeCompare(C.cat(b.catId)?.name || ''));
-  const y = +month.slice(0, 4);
-  return h`<div class="row between wrap"><h1>Budget</h1>
-    <div class="row"><a class="btn" href="#budget/${addMonths(month, -1)}" aria-label="Previous month">‹</a>
-      <select id="b-month" style="width:auto">${options(monthList().map((m) => [m, monthName(m) + (isCollege(m) ? ' (college)' : '')]), month)}</select>
-      <a class="btn" href="#budget/${addMonths(month, 1)}" aria-label="Next month">›</a></div></div>
+  const y = +month.slice(0, 4), suffix = mode === 'month' ? '' : '/' + mode, step = mode === 'year' ? 12 : 1, list = monthList(month);
+  const picker = mode === 'since' ? '' : mode === 'year'
+    ? h`<div class="row"><a class="btn" href="#budget/${addMonths(month, -12)}/year" aria-label="Previous year">‹</a><b class="num" style="min-width:56px;text-align:center">${y}</b><a class="btn" href="#budget/${addMonths(month, 12)}/year" aria-label="Next year">›</a></div>`
+    : h`<div class="row"><a class="btn" href="#budget/${addMonths(month, -step)}${suffix}" aria-label="Previous month">‹</a>
+      <select id="b-month" style="width:auto" aria-label="Month">${options(list.map((m) => [m, monthName(m) + (isCollege(m) ? ' (college)' : '')]), month)}</select>
+      ${month < list.at(-1) ? h`<a class="btn" href="#budget/${addMonths(month, step)}${suffix}" aria-label="Next month">›</a>` : h`<span class="btn" aria-disabled="true" style="opacity:.4">›</span>`}</div>`;
+  return h`<div class="row between wrap"><h1>Budget</h1>${picker}</div>
   <div class="tabs"><a href="#budget/${month}" class="${mode === 'month' ? 'on' : ''}">Month</a><a href="#budget/${month}/year" class="${mode === 'year' ? 'on' : ''}">Year grid</a>
-    <a href="#budget/${month}/since" class="${mode === 'since' ? 'on' : ''}">Since July</a><a href="#shared">Shared</a><a href="#txns">All transactions</a></div>
+    <a href="#budget/${month}/since" class="${mode === 'since' ? 'on' : ''}">Since July</a></div>
+  <div class="row wrap small" style="gap:14px;margin:-4px 0 12px"><a href="#txns">All transactions ›</a><a href="#shared">Shared costs ›</a></div>
   ${isCollege(month) ? h`<p class="notice">College-era month: shown as history only. Budgets and averages use July 2026 onward.</p>` : ''}
   ${mode === 'year' ? yearGrid(y) : mode === 'since' ? since(tm) : h`
   <div class="grid cols-3" style="margin-bottom:14px">
@@ -25,7 +28,11 @@ function render(month = thisMonth(), mode = 'month') {
   </div>
   <div class="card"><ul class="list">${rows.length ? rows.map((r) => catRow(r, month)) : h`<li class="muted">Nothing this month yet.</li>`}</ul></div>`}`;
 }
-function monthList() { const out = []; for (let m = '2023-01'; m <= '2027-12'; m = addMonths(m, 1)) out.push(m); return out; }
+// From the first month with data through a year ahead, always including the month being shown.
+function monthList(current) {
+  const first = S.all('txns').reduce((a, t) => (t.date && t.date < a ? t.date : a), thisMonth()).slice(0, 7), last = addMonths(thisMonth(), 12);
+  const out = []; for (let m = first < current ? first : current; m <= (last > current ? last : current); m = addMonths(m, 1)) out.push(m); return out;
+}
 function catRow(r, month) {
   const c = C.cat(r.catId), f = r.budget ? r.spent / r.budget : (r.spent ? 2 : 0);
   return h`<li class="tap" data-cat="${r.catId}" data-month="${month}"><div class="grow">
@@ -38,11 +45,11 @@ function yearGrid(y) {
   const cats = S.all('categories').filter((c) => c.countsAsSpending !== false);
   const data = cats.map((c) => ({ c, by: months.map((m) => sum(S.all('txns').filter((t) => t.catId === c.id && C.isPersonal(t) && ym(t.date) === m), (t) => t.amount)), budget: C.budgetFor(c.id, months[0]) * 12 }))
     .filter((d) => d.budget || d.by.some(Boolean)).sort((a, b) => a.c.name.localeCompare(b.c.name));
-  return h`<div class="card scroll-x"><table><thead><tr><th>Category ${y}</th><th>Budget</th>${MONTHS.map((n) => h`<th>${n.slice(0, 3)}</th>`)}<th>Total</th></tr></thead>
-    <tbody>${data.map((d) => h`<tr><td><button class="link" data-editbudget="${d.c.id}" data-year="${C.budgetYear(months[0])}">${d.c.name}</button></td><td class="num">${money0(d.budget)}</td>
-      ${d.by.map((v) => h`<td class="num">${v ? money0(v) : ''}</td>`)}<td class="num ${sum(d.by) > d.budget && d.budget ? 'bad' : ''}">${money0(sum(d.by))}</td></tr>`)}
+  return h`<div class="card scroll-x"><table class="sticky-col"><thead><tr><th>Category ${y}</th><th>Budget / yr</th>${MONTHS.map((n) => h`<th>${n.slice(0, 3)}</th>`)}<th>Total</th></tr></thead>
+    <tbody>${data.map((d) => h`<tr><td><a href="#txns/all/${d.c.id}">${d.c.name}</a></td><td class="num"><button class="link" data-editbudget="${d.c.id}" data-year="${C.budgetYear(months[0])}" aria-label="Change ${d.c.name} budget">${money0(d.budget)} ✎</button></td>
+      ${d.by.map((v, i) => h`<td class="num">${v ? h`<a href="#txns/${months[i]}/${d.c.id}" style="color:inherit">${money0(v)}</a>` : ''}</td>`)}<td class="num ${sum(d.by) > d.budget && d.budget ? 'bad' : ''}">${money0(sum(d.by))}</td></tr>`)}
     <tr><td><b>Total</b></td><td class="num"><b>${money0(sum(data, (d) => d.budget))}</b></td>${months.map((_, i) => h`<td class="num"><b>${money0(sum(data, (d) => d.by[i]))}</b></td>`)}<td class="num"><b>${money0(sum(data, (d) => sum(d.by)))}</b></td></tr></tbody></table>
-    <p class="small muted">Tap a category to change its budget. Shared and one-off spending are left out.</p></div>`;
+    <p class="small muted">Tap an amount to see its transactions, or the ✎ budget to change it. Shared and one-off spending are left out.</p></div>`;
 }
 function since(tm) {
   const cats = C.activeCats().filter((c) => c.countsAsSpending !== false);
@@ -53,28 +60,40 @@ function since(tm) {
     <div class="scroll-x"><table><thead><tr><th>Category</th><th>Your average</th><th>Budget ${y}</th><th>Suggested</th></tr></thead><tbody>
     ${rows.map((r) => h`<tr><td>${r.c.name}</td><td class="num">${money(r.avg)}</td><td class="num">${money(r.bud)}</td><td class="num">${money(r.avg || r.bud)}</td></tr>`)}
     <tr><td><b>Total</b></td><td class="num"><b>${money(sum(rows, (r) => r.avg))}</b></td><td class="num"><b>${money(sum(rows, (r) => r.bud))}</b></td><td class="num"><b>${money(sum(rows, (r) => r.avg || r.bud))}</b></td></tr></tbody></table></div>
-    <div class="row" style="margin-top:12px"><button class="primary" id="apply-suggest" data-year="${y}">Use suggested as the ${y} budget</button></div>
+    <div class="row" style="margin-top:12px"><button class="primary" id="apply-suggest" data-year="${y}" data-cats="${rows.map((r) => r.c.id).join(',')}">Use suggested as the ${y} budget</button></div>
     <p class="small muted">You can still change any single category afterwards from the Year grid.</p></div>`;
 }
 
 function editBudget(catId, year) {
   const c = C.cat(catId), id = `${year}-${catId}-me`, b = S.get('budgets', id) || { id, year, catId, payer: 'me', annual: 0, monthly: null };
-  openSheet(h`<h2>${c.name} · ${year} budget</h2><form class="form" id="bf">
-    <label>Monthly amount<input name="m" inputmode="decimal" value="${((b.monthly ?? Math.round(b.annual / 12)) / 100).toFixed(2)}"></label>
+  openSheet(h`<div class="row between"><h2>${c.name} · ${year} budget</h2><button class="link" data-close>Close</button></div><form class="form" id="bf">
+    <label>Monthly amount<input name="m" inputmode="decimal" required value="${((b.monthly ?? Math.round(b.annual / 12)) / 100).toFixed(2)}"></label>
+    <p class="small muted" id="bf-help" style="margin:0"></p><p class="form-error" id="bf-err" role="alert"></p>
     <div class="row between"><button type="button" data-close>Cancel</button><button class="primary">Save</button></div></form>`, (root) => {
-    root.querySelector('[data-close]').onclick = closeSheet;
-    root.querySelector('#bf').onsubmit = async (e) => { e.preventDefault(); const m = toCents(e.target.m.value) || 0; await S.put('budgets', { ...b, monthly: m, annual: m * 12 }); closeSheet(); toast('Budget saved'); };
+    const inp = root.querySelector('[name=m]'), help = () => { const m = toCents(inp.value); root.querySelector('#bf-help').textContent = m != null ? `Applies to every month of ${year}: ${money(m)} a month, ${money(m * 12)} a year.` : ''; };
+    inp.oninput = help; help();
+    root.querySelector('#bf').onsubmit = async (e) => {
+      e.preventDefault(); const m = toCents(inp.value);
+      if (m == null || m < 0) { root.querySelector('#bf-err').textContent = 'Enter an amount like 150 or 150.00.'; return; }
+      await S.put('budgets', { ...b, monthly: m, annual: m * 12 }); closeSheet(); toast(`${c.name}: ${money0(m)} a month`);
+    };
   });
 }
 
 function mount(root, month = thisMonth()) {
   root.querySelector('#b-month')?.addEventListener('change', (e) => { location.hash = `#budget/${e.target.value}`; });
-  root.querySelectorAll('[data-cat]').forEach((el) => el.onclick = () => { location.hash = `#txns/${el.dataset.month}/${el.dataset.cat}`; });
+  root.querySelectorAll('li[data-cat]').forEach((el) => el.onclick = () => { location.hash = `#txns/${el.dataset.month}/${el.dataset.cat}`; });
   root.querySelectorAll('[data-editbudget]').forEach((el) => el.onclick = () => editBudget(el.dataset.editbudget, +el.dataset.year));
   root.querySelector('#apply-suggest')?.addEventListener('click', async (e) => {
-    const y = +e.target.dataset.year, tm = C.typicalMonth(), ref = thisMonth() < '2026-12' ? '2026-12' : thisMonth();
-    const docs = C.activeCats().filter((c) => c.countsAsSpending !== false).map((c) => { const m = tm.per[c.id] || C.budgetFor(c.id, ref); return { id: `${y}-${c.id}-me`, year: y, catId: c.id, payer: 'me', monthly: m, annual: m * 12 }; });
-    await S.putMany('budgets', docs); toast(`${y} budget updated`);
+    const y = +e.target.dataset.year, tm = C.typicalMonth(), ref = thisMonth() < '2026-12' ? '2026-12' : thisMonth(), ids = e.target.dataset.cats.split(',').filter(Boolean);
+    const docs = ids.map((id) => { const m = tm.per[id] || C.budgetFor(id, ref); return { id: `${y}-${id}-me`, year: y, catId: id, payer: 'me', monthly: m, annual: m * 12 }; })
+      .filter((d) => (S.get('budgets', d.id)?.monthly ?? null) !== d.monthly);
+    if (!docs.length) return toast('Your budget already matches the suggestion');
+    const before = sum(docs, (d) => C.budgetFor(d.catId, ref)), after = sum(docs, (d) => d.monthly);
+    if (!confirm(`Change ${docs.length} categor${docs.length === 1 ? 'y' : 'ies'} in the ${y} budget? Those categories go from ${money0(before)} to ${money0(after)} a month.`)) return;
+    const old = docs.map((d) => S.get('budgets', d.id)).filter(Boolean), added = docs.filter((d) => !S.get('budgets', d.id)).map((d) => d.id);
+    await S.putMany('budgets', docs);
+    toast(`${y} budget updated`, { action: 'Undo', onAction: async () => { if (old.length) await S.putMany('budgets', old); if (added.length) await S.removeMany('budgets', added); toast('Budget restored'); } });
   });
 }
 
@@ -89,18 +108,20 @@ function shared() {
 
 // ---- All transactions, optionally filtered by month and category ----
 function txns(month, catId) {
+  if (month === 'all') month = null;
   let list = S.all('txns').filter((t) => t.status !== 'review');
   if (month) list = list.filter((t) => ym(t.date) === month);
   if (catId) list = list.filter((t) => t.catId === catId);
   list.sort((a, b) => b.date.localeCompare(a.date));
-  const shown = list.slice(0, 300);
-  return h`<h1>${catId ? C.cat(catId)?.name : 'Transactions'}</h1>
-    <p class="muted">${month ? monthName(month) : 'All months'} · ${list.length} transaction${list.length === 1 ? '' : 's'} · ${money(sum(list, (t) => t.amount))}${month ? raw(` · <a href="#txns">show all</a>`) : ''}</p>
-    <div class="card"><ul class="list">${shown.length ? shown.map(txnRow) : h`<li class="muted">None.</li>`}</ul>${list.length > 300 ? h`<p class="small muted">Showing the latest 300.</p>` : ''}</div>`;
+  const shown = list.slice(0, 300), counted = sum(list.filter(C.isPersonal), (t) => t.amount), other = sum(list, (t) => t.amount) - counted;
+  const c = catId && C.cat(catId), yr = C.budgetYear(month || thisMonth());
+  return h`<div class="row between wrap"><h1>${c ? c.name : 'Transactions'}</h1>${c ? h`<button id="tx-budget" data-cat="${catId}" data-year="${yr}">Edit ${yr} budget</button>` : ''}</div>
+    <p class="muted">${month ? monthName(month) : 'All months'} · ${list.length} transaction${list.length === 1 ? '' : 's'} · <b>${money(counted)}</b> counts toward the budget${other ? ` · ${money(other)} one-off, shared or reimbursed` : ''}${c && month ? raw(` · <a href="#txns/all/${catId}">All months for ${c.name.replace(/</g, '&lt;')}</a>`) : ''}</p>
+    <div class="card"><ul class="list">${shown.length ? shown.map(txnRow) : h`<li class="muted">${c ? `No ${c.name} spending ${month ? 'in ' + monthName(month) : 'yet'}.` : 'No transactions yet. Tap + to add one.'}</li>`}</ul>${list.length > 300 ? h`<p class="small muted">Showing the latest 300.</p>` : ''}</div>`;
 }
 
 export const views = {
   budget: { render, mount },
   shared: { render: shared },
-  txns: { render: txns, mount: (root) => bindTxnRows(root) },
+  txns: { render: txns, mount: (root) => { bindTxnRows(root); root.querySelector('#tx-budget')?.addEventListener('click', (e) => editBudget(e.target.dataset.cat, +e.target.dataset.year)); } },
 };

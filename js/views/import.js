@@ -46,6 +46,7 @@ function showPreview(html, onCommit, label = 'Import') {
 }
 
 const byName = (n) => S.all('accounts').find((a) => a.name === n);
+const need = (a, n) => { if (!a) throw new Error(`There's no account named "${n}". Add it under Settings → Accounts (or rename yours to match), then import again.`); return a; };
 
 // Paystub and 401(k) PDFs are read on the Paystubs & 401k screen, which shows progress and the results.
 async function toPaystubs(files) {
@@ -66,8 +67,8 @@ async function readPdfStatement(file) {
     }
     return { label: 'JMCU member statement', groups, snaps };
   }
-  if (type === 'card') { const c = P.parseCard(pages), a = byName('Discover it card'); return { label: 'Discover it card statement', groups: [{ acctId: a.id, rows: c.rows }], snaps: c.end != null ? [{ acctId: a.id, date: c.endDate, balance: c.end }] : [] }; }
-  if (type === 'discoverBank') { const d = P.parseDiscoverBank(pages), a = byName('Discover Savings'); return { label: 'Discover savings statement (balance only)', groups: [], snaps: d.end != null ? [{ acctId: a.id, date: d.endDate, balance: d.end }] : [] }; }
+  if (type === 'card') { const c = P.parseCard(pages), a = need(byName('Discover it card'), 'Discover it card'); return { label: 'Discover it card statement', groups: [{ acctId: a.id, rows: c.rows }], snaps: c.end != null ? [{ acctId: a.id, date: c.endDate, balance: c.end }] : [] }; }
+  if (type === 'discoverBank') { const d = P.parseDiscoverBank(pages), a = need(byName('Discover Savings'), 'Discover Savings'); return { label: 'Discover savings statement (balance only)', groups: [], snaps: d.end != null ? [{ acctId: a.id, date: d.endDate, balance: d.end }] : [] }; }
   return null; // not a bank layout: likely a paystub or 401(k) statement (image-only or scrambled text)
 }
 
@@ -80,8 +81,9 @@ async function statement(file, acctId) {
   }
   else {
     const a = C.acct(acctId), text = await file.text();
+    if (!a) throw new Error('Add a bank or card account first (Settings → Accounts), then pick it before choosing the file.');
     const parsed = /\.(ofx|qfx)$/i.test(file.name) || /<OFX>/i.test(text) ? parseOFX(text) : parseBankCSV(text, { isCard: !!a.isLiability });
-    groups = [{ acctId, rows: parsed.rows }]; label = `format: ${parsed.layout}`;
+    groups = [{ acctId, rows: parsed.rows }]; label = `Going to ${a.name}`;
   }
   const known = new Set([...S.all('txns'), ...S.all('income'), ...S.all('transfers'), ...S.all('imports')].map((x) => x.fid).filter(Boolean));
   const fromEmail = emailMatcher({ txns: S.all('txns'), transfers: S.all('transfers'), income: S.all('income') });
@@ -100,6 +102,7 @@ async function statement(file, acctId) {
   }
   const dates = groups.flatMap((g) => g.rows.map((r) => r.date)).sort();
   showPreview(h`<h2>${file.name}</h2><p>${label}. ${total} rows${dates[0] ? ` (${shortDate(dates[0])} – ${shortDate(dates.at(-1))})` : ''}: <b>${fresh.length} new</b>, ${total - fresh.length - early - emailed} already imported${emailed ? `, ${emailed} already in from alert emails` : ''}${early ? h`, <b>${early} skipped</b> because they're on or before ${shortDate(cutoff)}, which your spreadsheet history already covers` : ''}.</p>
+    ${/\.pdf$/i.test(file.name) ? '' : h`<label style="max-width:320px">Wrong account? Pick the right one<select id="pv-acct">${options(S.all('accounts').filter((x) => !x.isInvestment && !x.closed).map((x) => [x.id, x.name]), groups[0]?.acctId)}</select></label>`}
     ${groups.length > 1 ? h`<p class="small">${groups.map((g) => `${C.acct(g.acctId).name}: ${g.rows.length}`).join(' · ')}</p>` : ''}
     ${snaps.length ? h`<p class="small">Ending balances saved as snapshots: ${snaps.map((s) => `${C.acct(s.acctId).name} ${money(s.balance)} on ${shortDate(s.date)}`).join(' · ')}</p>` : ''}
     <p class="small muted">${fresh.filter((x) => x.kind === 'transfer').length} look like transfers or card payments, ${fresh.filter((x) => x.kind === 'income').length} like income. You can change any of them in the Inbox.</p>`,
@@ -109,9 +112,11 @@ async function statement(file, acctId) {
       for (const g of groups) await S.put('imports', { kind: 'statement', acctId: g.acctId, date: today(), file: file.name, count: fresh.filter((x) => x.acctId === g.acctId).length });
       location.hash = fresh.length ? '#inbox' : '#networth';
     }, fresh.length ? `Send ${fresh.length} to Inbox` : 'Save balances');
+  document.getElementById('pv-acct')?.addEventListener('change', (e) => { const sel = document.getElementById('st-acct'); if (sel) sel.value = e.target.value; statement(file, e.target.value).catch((err) => alert(err.message)); });
 }
 
 async function vanguard(file, acctId) {
+  if (!C.acct(acctId)) throw new Error('Add an investment account first (Settings → Accounts), then pick it before choosing the file.');
   const p = parseVanguard(await file.text()), lots = vanguardLots(p).filter((l) => C.acct(acctId).type === 'Roth 401k' ? l.plan : !l.plan);
   const blocks = p.holdings.length + (p.planHoldings.length ? 1 : 0);
   const multi = p.holdings.length > 1 || (p.holdings.length && p.planHoldings.length);

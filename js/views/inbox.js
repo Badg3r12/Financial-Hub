@@ -35,17 +35,17 @@ function render() {
   const rows = S.all('txns').filter((t) => t.status === 'review').sort((a, b) => a.date.localeCompare(b.date));
   const cats = C.activeCats();
   const files = [...new Set(rows.map((t) => t.importFile).filter(Boolean))];
-  return h`<div class="row between wrap"><h1>Inbox</h1>${rows.length ? h`<div class="row wrap"><button class="danger" id="ib-discard">Discard all</button><button class="primary" id="ib-all">Confirm all ready</button></div>` : ''}</div>
-  ${files.length > 1 ? h`<div class="row wrap small" style="margin-bottom:10px">Discard one file: ${files.map((f) => h`<button class="link" data-discard-file="${f}">${f} ✕</button>`)}</div>` : ''}
+  return h`<div class="row between wrap"><h1>Inbox</h1>${rows.length ? h`<div class="row wrap"><a class="btn" href="#import">Import more</a><button class="primary" id="ib-all">Confirm all ready</button></div>` : ''}</div>
+  ${rows.length ? h`<div class="row wrap small" style="margin-bottom:10px;gap:4px">${files.length > 1 ? h`Discard one file: ${files.map((f) => h`<button class="link" data-discard-file="${f}" aria-label="Discard unconfirmed rows from ${f}">${f} ✕</button>`)}<span class="muted">·</span>` : ''}<button class="link danger-link" id="ib-discard">Discard all unconfirmed</button></div>` : ''}
   <p class="muted">Imported rows wait here. Matches with your Quick add entries merge automatically when confirmed. Choosing a category also saves a rule for that merchant.</p>
   <div class="card">${rows.length ? h`<ul class="list">${rows.map((t) => {
     const m = findMatch(t), sug = t.catId || suggestCat(t.merchant, t.hint), kind = t.kind === 'spend' && ruleFor(t.merchant)?.work ? 'work' : t.kind;
     return h`<li data-row="${t.id}" style="flex-wrap:wrap"><div class="grow" style="min-width:200px"><div class="ellipsis"><b>${t.merchant}</b></div>
       <div class="small muted">${shortDate(t.date)} · ${C.acct(t.acctId)?.name || ''}${m ? h` · <span class="good">matches your entry "${m.note || C.cat(m.catId)?.name}"</span>` : ''}</div></div>
       <div class="num" style="min-width:90px;text-align:right">${money(t.amount)}</div>
-      <div class="row" style="width:100%;gap:6px"><select data-kind style="width:auto">${options([['spend', t.amount < 0 ? 'Refund' : 'Spending'], ['work', 'Work (reimbursed)'], ['transfer', 'Transfer'], ['income', 'Income'], ['ignore', 'Ignore']], kind || 'spend')}</select>
-      <select data-cat ${m ? 'disabled' : ''}>${options([['', 'Category…'], ...cats.map((c) => [c.id, c.name])], sug || '')}</select><button data-ok>✓</button></div></li>`; })}</ul>`
-    : h`<p class="empty">All caught up. Import a statement from the Import screen.</p>`}</div>`;
+      <div class="row" style="width:100%;gap:6px"><select data-kind style="width:auto" aria-label="Type for ${t.merchant}">${options([['spend', t.amount < 0 ? 'Refund' : 'Spending'], ['work', 'Work (reimbursed)'], ['transfer', 'Transfer'], ['income', 'Income'], ['ignore', 'Ignore']], kind || 'spend')}</select>
+      <select data-cat ${m ? 'disabled' : ''} aria-label="Category for ${t.merchant}">${options([['', 'Category…'], ...cats.map((c) => [c.id, c.name])], sug || '')}</select><button data-ok class="primary" aria-label="Confirm ${t.merchant}">Confirm</button></div></li>`; })}</ul>`
+    : h`<div class="empty stack" style="align-items:center"><p style="margin:0">All caught up.</p><a class="btn btn-primary" href="#import">Import a statement</a></div>`}</div>`;
 }
 
 function mount(root) {
@@ -53,7 +53,11 @@ function mount(root) {
   root.querySelectorAll('[data-row]').forEach((li) => {
     const sync = () => { li.querySelector('[data-cat]').style.visibility = read(li).kind === 'spend' ? 'visible' : 'hidden'; };
     li.querySelector('[data-kind]').onchange = sync; sync();
-    li.querySelector('[data-ok]').onclick = async () => { try { await confirmRow(S.get('txns', li.dataset.row), read(li)); } catch (e) { toast(e.message); } };
+    li.querySelector('[data-ok]').onclick = async () => {
+      const t = S.get('txns', li.dataset.row), v = read(li);
+      try { await confirmRow(t, v); toast(v.kind === 'ignore' ? 'Ignored' : v.kind === 'transfer' ? 'Saved as a transfer' : v.kind === 'income' ? 'Saved as income' : v.kind === 'work' ? 'Saved as a work expense' : `Saved to ${C.cat(v.catId)?.name || 'your entry'}`); }
+      catch (e) { toast(e.message); li.querySelector('[data-cat]').focus(); }
+    };
   });
   // Discarding removes rows without remembering them, so the same file can be imported again later.
   const discard = async (pred, what) => {
@@ -63,12 +67,13 @@ function mount(root) {
   root.querySelector('#ib-discard')?.addEventListener('click', () => discard(() => true, 'from the Inbox'));
   root.querySelectorAll('[data-discard-file]').forEach((b) => b.onclick = () => discard((t) => t.importFile === b.dataset.discardFile, `from ${b.dataset.discardFile}`));
   root.querySelector('#ib-all')?.addEventListener('click', async () => {
-    let n = 0;
-    for (const li of root.querySelectorAll('[data-row]')) {
-      const t = S.get('txns', li.dataset.row), v = read(li);
-      if (v.kind !== 'spend' || v.catId || findMatch(t)) { await confirmRow(t, v); n++; } // 'work' needs no category
+    let n = 0, left = 0, failed = 0;
+    for (const li of [...root.querySelectorAll('[data-row]')]) {
+      const t = S.get('txns', li.dataset.row), v = read(li); if (!t) continue;
+      if (v.kind !== 'spend' || v.catId || findMatch(t)) { try { await confirmRow(t, v); n++; } catch (e) { console.error(e); failed++; } } // 'work' needs no category
+      else left++;
     }
-    toast(`Confirmed ${n}. Rows without a category are still here.`);
+    toast(`Confirmed ${n}${left ? ` · ${left} still need a category` : ''}${failed ? ` · ${failed} couldn't be saved` : ''}`);
   });
 }
 export const views = { inbox: { render, mount } };

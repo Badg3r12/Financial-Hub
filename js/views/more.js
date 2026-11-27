@@ -10,7 +10,7 @@ function render() {
   const links = [['networth', 'Net worth', 'Snapshots, account breakdown, unexplained differences'], ['paystubs', 'Paystubs & 401k', 'Income, taxes, Roth 401k and match'],
     ['inbox', 'Inbox', 'Imported rows waiting for review'], ['import', 'Import', 'Statements, Vanguard files, history from the spreadsheets'],
     ['shared', 'Shared costs', 'College-era costs not paid by you'], ['car', 'Car log', 'Service history and next oil change'], ['settings', 'Settings', 'Backup, categories, accounts, theme']];
-  return h`<h1>More</h1><div class="card"><ul class="list">${links.map(([k, t, d]) => h`<li><a href="#${k}" style="text-decoration:none;color:inherit;display:block;width:100%"><b>${t}</b><div class="small muted">${d}</div></a></li>`)}</ul></div>`;
+  return h`<h1>More</h1><div class="card"><ul class="list">${links.map(([k, t, d]) => h`<li class="menu-row"><a href="#${k}" style="text-decoration:none;color:inherit;display:flex;align-items:center;width:100%;min-height:44px"><span class="grow"><b>${t}</b><div class="small muted">${d}</div></span><span class="muted" aria-hidden="true" style="font-size:20px">›</span></a></li>`)}</ul></div>`;
 }
 
 // ---- Net worth ----
@@ -31,12 +31,14 @@ function mountNetworth(root) {
     const accts = S.all('accounts').filter((a) => !a.closed);
     openSheet(h`<h2>Add snapshot</h2><form class="form" id="sf"><label>Date<input type="date" name="date" value="${today()}"></label>
       ${accts.map((a) => h`<label>${a.name}${a.isLiability ? ' (amount owed)' : ''}<input name="a-${a.id}" inputmode="decimal" placeholder="${C.latestSnapshot(a.id) ? (C.latestSnapshot(a.id).balance / 100).toFixed(2) : ''}"></label>`)}
-      <p class="small muted">Leave blank to skip an account.</p><div class="row between"><button type="button" data-close>Cancel</button><button class="primary">Save</button></div></form>`, (r) => {
-      r.querySelector('[data-close]').onclick = closeSheet;
+      <p class="small muted">Leave blank to skip an account.</p><p class="form-error" id="sf-err" role="alert"></p><div class="row between"><button type="button" data-close>Cancel</button><button class="primary">Save</button></div></form>`, (r) => {
       r.querySelector('#sf').onsubmit = async (e) => {
-        e.preventDefault(); const d = formData(e.target);
-        await S.putMany('snapshots', accts.filter((a) => toCents(d['a-' + a.id]) !== null).map((a) => ({ id: `${d.date}-${a.id}`, date: d.date, acctId: a.id, balance: toCents(d['a-' + a.id]), source: 'typed' })));
-        closeSheet(); toast('Snapshot saved');
+        e.preventDefault(); const d = formData(e.target), bad = [];
+        for (const a of accts) { const v = String(d['a-' + a.id] || '').trim(), inp = r.querySelector(`[name="a-${a.id}"]`), ok = !v || toCents(v) !== null; inp.style.borderColor = ok ? '' : 'var(--bad)'; if (!ok) bad.push(a.name); }
+        if (bad.length) { r.querySelector('#sf-err').textContent = `Check ${bad.join(', ')}: use a number like 1250.00.`; return; }
+        const docs = accts.filter((a) => String(d['a-' + a.id] || '').trim()).map((a) => ({ id: `${d.date}-${a.id}`, date: d.date, acctId: a.id, balance: toCents(d['a-' + a.id]), source: 'typed' }));
+        if (!docs.length) { r.querySelector('#sf-err').textContent = 'Enter at least one balance.'; return; }
+        await S.putMany('snapshots', docs); closeSheet(); toast(`Saved ${docs.length} balance${docs.length > 1 ? 's' : ''}`);
       };
     });
   };
@@ -48,16 +50,16 @@ function car() {
   const lastOil = log.find((x) => /oil/i.test(x.desc)), cur = Math.max(0, ...log.map((x) => x.miles || 0));
   return h`<div class="row between"><h1>Car log</h1><button class="primary" id="car-add">Add service</button></div>
   <div class="grid cols-3" style="margin-bottom:14px"><div class="card"><h3>Current mileage</h3><div class="big num">${cur.toLocaleString()}</div></div>
-    <div class="card"><h3>Next oil change</h3><div class="big num">${lastOil ? (lastOil.miles + (prefs.oilInterval || 5000)).toLocaleString() : '—'}</div><div class="small muted">Every ${(prefs.oilInterval || 5000).toLocaleString()} miles (change in Settings)</div></div></div>
-  <div class="card"><ul class="list">${log.map((x) => h`<li class="tap" data-car="${x.id}"><div class="grow">${x.desc}<div class="small muted">${shortDate(x.date)} · ${(x.miles || 0).toLocaleString()} mi</div></div><span class="num">${x.cost ? money(x.cost) : ''}</span></li>`)}</ul>${log.length ? '' : h`<p class="muted">No service records yet.</p>`}</div>`;
+    <div class="card"><h3>Next oil change</h3><div class="big num">${lastOil ? (lastOil.miles + (prefs.oilInterval || 5000)).toLocaleString() : '—'}</div><div class="small muted">Every ${(prefs.oilInterval || 5000).toLocaleString()} miles (<a href="#settings">change in Settings</a>)</div></div></div>
+  <div class="card"><ul class="list">${log.map((x) => h`<li class="tap" data-car="${x.id}"><div class="grow">${x.desc}<div class="small muted">${shortDate(x.date)} · ${(x.miles || 0).toLocaleString()} mi</div></div><span class="num">${x.cost ? money(x.cost) : ''}</span></li>`)}</ul>${log.length ? '' : h`<p class="muted">No service records yet. Choose Add service after an oil change or repair.</p>`}</div>`;
 }
 function mountCar(root) {
-  const edit = (x = { date: today(), miles: '', desc: '', cost: null }) => openSheet(h`<h2>${x.id ? 'Edit service' : 'Add service'}</h2><form class="form" id="cf">
-    <div class="two"><label>Date<input type="date" name="date" value="${x.date}"></label><label>Mileage<input name="miles" inputmode="numeric" value="${x.miles}"></label></div>
-    <label>What was done<input name="desc" value="${x.desc}" required></label><label>Cost<input name="cost" inputmode="decimal" value="${x.cost ? x.cost / 100 : ''}"></label>
-    <div class="row between">${x.id ? h`<button type="button" class="danger" id="cdel">Delete</button>` : h`<span></span>`}<button class="primary">Save</button></div></form>`, (r) => {
-    r.querySelector('#cdel')?.addEventListener('click', async () => { await S.remove('car', x.id); closeSheet(); });
-    r.querySelector('#cf').onsubmit = async (e) => { e.preventDefault(); const d = formData(e.target); await S.put('car', { ...x, date: d.date, miles: parseInt(d.miles) || 0, desc: d.desc, cost: toCents(d.cost) }); closeSheet(); };
+  const edit = (x = { date: today(), miles: '', desc: '', cost: null }) => openSheet(h`<div class="row between"><h2>${x.id ? 'Edit service' : 'Add service'}</h2><button class="link" data-close>Close</button></div><form class="form" id="cf">
+    <div class="two"><label>Date<input type="date" name="date" value="${x.date}" required></label><label>Mileage<input name="miles" inputmode="numeric" value="${x.miles}"></label></div>
+    <label>What was done<input name="desc" value="${x.desc}" required placeholder="Oil change"></label><label>Cost<input name="cost" inputmode="decimal" value="${x.cost ? x.cost / 100 : ''}"></label>
+    <div class="row between">${x.id ? h`<button type="button" class="danger" id="cdel">Delete</button>` : h`<button type="button" data-close>Cancel</button>`}<button class="primary">Save</button></div></form>`, (r) => {
+    r.querySelector('#cdel')?.addEventListener('click', async () => { if (!confirm(`Delete "${x.desc}" from ${shortDate(x.date)}?`)) return; await S.remove('car', x.id); closeSheet(); toast('Service deleted', { action: 'Undo', onAction: () => S.put('car', x) }); });
+    r.querySelector('#cf').onsubmit = async (e) => { e.preventDefault(); const d = formData(e.target); await S.put('car', { ...x, date: d.date, miles: parseInt(String(d.miles).replace(/[,\s]/g, '')) || 0, desc: d.desc.trim(), cost: toCents(d.cost) }); closeSheet(); toast('Service saved'); };
   });
   root.querySelector('#car-add').onclick = () => edit();
   root.querySelectorAll('[data-car]').forEach((el) => el.onclick = () => edit(S.get('car', el.dataset.car)));
@@ -91,15 +93,16 @@ function k401Section() {
   ${last ? h`<div class="card" style="margin-bottom:12px"><h3>Funds on ${shortDate(last.periodEnd)}</h3><ul class="list">${(last.funds || []).map((f) => h`<li><span class="grow">${f.name}<div class="small muted">${f.category}</div></span><span class="num">${money(f.end)}</span><span class="small muted num" style="width:52px;text-align:right">${last.end ? ((f.end / last.end) * 100).toFixed(1) + '%' : ''}</span></li>`)}</ul></div>` : ''}
   <div class="card scroll-x"><table><thead><tr><th>Quarter ending</th><th>Start</th><th>You</th><th>Match</th><th>Gain</th><th>End</th></tr></thead><tbody>
     ${[...k.statements].reverse().map((s) => h`<tr class="tap" data-k="${s.id}"><td>${shortDate(s.periodEnd)}</td><td class="num">${money(s.begin)}</td><td class="num">${money((s.employee || 0) + (s.employeePretax || 0))}</td><td class="num">${money(s.match)}</td><td class="num ${s.gain < 0 ? 'bad' : ''}">${money(s.gain)}</td><td class="num">${money(s.end)}</td></tr>`)}</tbody></table>
-    ${k.statements.length ? '' : h`<p class="muted">No statements yet. Screenshot pages 1 and 2 of the quarterly PDF, copy the text with Live Text, and paste it here.</p>`}</div>`;
+    ${k.statements.length ? '' : h`<p class="muted">No statements yet. Choose Add statements and pick the quarterly PDFs from Ekon Benefits.</p>`}</div>`;
 }
 
-function k401Form(s = { funds: [] }) {
+const reviewNote = (ctx) => ctx?.file ? h`<p class="notice warn">${ctx.n > 1 ? `${ctx.i} of ${ctx.n} to check · ` : ''}<b>${ctx.file}</b>: ${ctx.reason}</p>` : '';
+function k401Form(s = { funds: [] }, ctx) {
   const F = [['periodEnd', 'Quarter ending', 'date'], ['begin', 'Beginning value'], ['employee', 'Your Roth contributions'], ['employeePretax', 'Your pre-tax contributions'], ['match', 'Employer match'], ['withdrawals', 'Withdrawals'], ['gain', 'Investment gain or loss'], ['end', 'Ending value']];
   openSheet(h`<div class="row between"><h2>${s.id ? 'Edit 401(k) statement' : 'Add 401(k) statement'}</h2><button class="link" data-close>Close</button></div><form class="form" id="kf">
-    ${s.id ? '' : h`<label>Paste the statement text (pages 1–2, copied with Live Text)<textarea id="k-text"></textarea></label>`}
+    ${reviewNote(ctx)}${s.id || ctx ? '' : h`<p class="small muted" style="margin:0">Easier: choose <b>Add statements</b> and pick the PDF; it's read for you. Or type the figures below.</p>`}
     <div class="two">${F.map(([k, l, t]) => h`<label>${l}<input name="${k}" ${t === 'date' ? 'type="date"' : 'inputmode="decimal"'} value="${t === 'date' ? (s[k] || '') : (s[k] != null ? (s[k] / 100).toFixed(2) : '')}"></label>`)}</div>
-    <p class="small muted" id="k-funds">${(s.funds || []).length ? `${s.funds.length} funds read` : ''}</p>
+    <p class="small muted" id="k-funds">${(s.funds || []).length ? `${s.funds.length} funds read` : ''}</p><p class="form-error" id="k-err" role="alert"></p>
     <div class="row between">${s.id ? h`<button type="button" class="danger" id="kdel">Delete</button>` : h`<span></span>`}<button class="primary">Save</button></div></form>`, (r) => {
     const form = r.querySelector('#kf'); let funds = s.funds || [], start = s.periodStart;
     r.querySelector('[data-close]').onclick = closeSheet;
@@ -108,11 +111,16 @@ function k401Form(s = { funds: [] }) {
       for (const [k, , t] of F) if (got[k] != null) form.elements[k].value = t === 'date' ? got[k] : (got[k] / 100).toFixed(2);
       funds = got.funds; start = got.periodStart; r.querySelector('#k-funds').textContent = `${funds.length} funds read. Check the figures before saving.`;
     });
-    r.querySelector('#kdel')?.addEventListener('click', async () => { if (confirm('Delete this statement?')) { await S.remove('k401', s.id); closeSheet(); } });
+    r.querySelector('#kdel')?.addEventListener('click', async () => {
+      if (!confirm(`Delete the statement for the quarter ending ${shortDate(s.periodEnd)}? Its net-worth snapshot is removed too.`)) return;
+      const acct = S.all('accounts').find((a) => a.type === 'Roth 401k'), snapId = acct && `${s.periodEnd}-${acct.id}`, snap = snapId && S.get('snapshots', snapId);
+      await S.remove('k401', s.id); if (snap?.source === '401k statement') await S.remove('snapshots', snapId); closeSheet();
+      toast('Statement deleted', { action: 'Undo', onAction: async () => { await S.put('k401', s); if (snap) await S.put('snapshots', snap); } });
+    });
     form.onsubmit = async (e) => {
       e.preventDefault(); const d = formData(form), doc = { ...s, funds, periodStart: start };
       for (const [k, , t] of F) doc[k] = t === 'date' ? d[k] : toCents(d[k]);
-      if (!doc.periodEnd || doc.end == null) return toast('Quarter ending date and ending value are required');
+      if (!doc.periodEnd || doc.end == null) { r.querySelector('#k-err').textContent = 'Quarter ending date and ending value are required.'; return; }
       const { checkK401 } = await import('../import/k401.js'); const issues = checkK401(doc);
       if (issues.length && !confirm('These checks failed:\n\n' + issues.join('\n') + '\n\nSave anyway?')) return;
       doc.id = doc.periodEnd; await S.put('k401', doc);
@@ -122,15 +130,15 @@ function k401Form(s = { funds: [] }) {
     };
   });
 }
-function paystubForm(p = {}) {
+function paystubForm(p = {}, ctx) {
   const issues = p.gross ? checkPaystub(p, S.all('paystubs').filter((x) => x.id !== p.id)) : [];
   openSheet(h`<div class="row between"><h2>${p.id ? 'Edit paystub' : 'Add paystub'}</h2><button class="link" data-close>Close</button></div>
     <form class="form" id="pf">
-    ${p.id ? '' : h`<label>Paste the paystub text (Live Text from a screenshot)<textarea id="ps-text" placeholder="Paste here, then check the figures below"></textarea></label>`}
+    ${reviewNote(ctx)}${p.id || ctx ? '' : h`<p class="small muted" style="margin:0">Easier: choose <b>Add paystubs</b> and pick the PDFs from Ajera; they're read for you. Or type the figures below.</p>`}
     ${issues.length ? h`<div class="notice">${issues.map((i) => h`<div class="warn">• ${i}</div>`)}</div>` : ''}
     <div class="two">${PAYSTUB_FIELDS.map(([k, label, type]) => h`<label>${label}<input name="${k}" ${type === 'date' ? 'type="date"' : 'inputmode="decimal"'} value="${type === 'date' ? (p[k] || '') : (p[k] != null ? (p[k] / 100).toFixed(2) : '')}"></label>`)}</div>
-    <label class="check"><input type="checkbox" name="addIncome" ${p.id ? '' : 'checked'}> Record net pay as income</label>
-    <p class="small muted">The Roth 401k contribution and match are kept on the paystub for the year-to-date totals; the 401k's shares come from the Vanguard plan file.</p>
+    <label class="check"><input type="checkbox" name="addIncome" ${!p.id || S.get('income', 'pay-' + p.id) ? 'checked' : ''}> Record net pay as income</label>
+    <p class="small muted">The Roth 401(k) contribution and match are kept here for year-to-date totals; the 401(k) balance comes from the Ekon Benefits quarterly statement.</p><p class="form-error" id="ps-err" role="alert"></p>
     <div class="row between">${p.id ? h`<button type="button" class="danger" id="psdel">Delete</button>` : h`<span></span>`}<button class="primary">Save paystub</button></div></form>`, (r) => {
     r.querySelector('[data-close]').onclick = closeSheet;
     const form = r.querySelector('#pf');
@@ -139,11 +147,16 @@ function paystubForm(p = {}) {
       for (const [k, , type] of PAYSTUB_FIELDS) if (got[k] != null) form.elements[k].value = type === 'date' ? got[k] : (got[k] / 100).toFixed(2);
       toast(`Read ${Object.keys(got).length} fields. Check them before saving.`);
     });
-    r.querySelector('#psdel')?.addEventListener('click', async () => { if (confirm('Delete this paystub?')) { await S.remove('paystubs', p.id); closeSheet(); } });
+    r.querySelector('#psdel')?.addEventListener('click', async () => {
+      if (!confirm(`Delete the paystub paid ${shortDate(p.payDate)}? The income it recorded is removed too.`)) return;
+      const inc = ['pay-' + p.id, 'reimb-' + p.id].map((id) => S.get('income', id)).filter(Boolean);
+      await S.remove('paystubs', p.id); if (inc.length) await S.removeMany('income', inc.map((x) => x.id)); closeSheet();
+      toast('Paystub deleted', { action: 'Undo', onAction: async () => { await S.put('paystubs', p); if (inc.length) await S.putMany('income', inc); } });
+    });
     form.onsubmit = async (e) => {
       e.preventDefault(); const d = formData(form), doc = { ...p };
       for (const [k, , type] of PAYSTUB_FIELDS) doc[k] = type === 'date' ? (d[k] || null) : toCents(d[k]);
-      if (!doc.payDate || doc.gross == null || doc.net == null) return toast('Pay date, gross and net are required');
+      if (!doc.payDate || doc.gross == null || doc.net == null) { r.querySelector('#ps-err').textContent = 'Pay date, gross pay and net pay are required.'; return; }
       const problems = checkPaystub(doc, S.all('paystubs').filter((x) => x.id !== p.id));
       if (problems.length && !confirm('These checks failed:\n\n' + problems.join('\n') + '\n\nSave anyway?')) return;
       await savePaystub(doc, d.addIncome);
@@ -154,9 +167,11 @@ function paystubForm(p = {}) {
 // Paycheck income = net minus any reimbursement; the reimbursement is recorded as its own income.
 async function savePaystub(doc, addIncome = true) {
   doc.id ||= 'ps-' + doc.payDate + '-' + (doc.net || 0); await S.put('paystubs', doc);
-  if (!addIncome) return;
+  const ids = ['pay-' + doc.id, 'reimb-' + doc.id].filter((id) => S.get('income', id));
+  if (!addIncome) { if (ids.length) await S.removeMany('income', ids); return; }
   await S.put('income', { id: 'pay-' + doc.id, date: doc.payDate, amount: doc.net - (doc.reimbursed || 0), source: 'paycheck', paystubId: doc.id });
   if (doc.reimbursed) await S.put('income', { id: 'reimb-' + doc.id, date: doc.payDate, amount: doc.reimbursed, source: 'reimbursement', paystubId: doc.id, note: 'Work expenses paid back' });
+  else if (S.get('income', 'reimb-' + doc.id)) await S.remove('income', 'reimb-' + doc.id);
 }
 async function saveK401(doc) {
   doc.id = doc.periodEnd; await S.put('k401', doc);
@@ -185,16 +200,16 @@ export async function readFiles(files, kind) {
       if (as === 'paystub') {
         const p = P.parsePaystub(text), others = S.all('paystubs');
         if (p.payDate && others.some((o) => o.payDate === p.payDate && o.net === p.net)) { dupes.push(f.name); continue; }
-        if (p.payDate && p.gross != null && p.net != null && !P.checkPaystub(p, others).length) { await savePaystub(p); saved++; } else review.push(['paystub', p]);
+        if (p.payDate && p.gross != null && p.net != null && !P.checkPaystub(p, others).length) { await savePaystub(p); saved++; } else review.push(['paystub', p, f.name, p.payDate ? "the totals don't add up; check the figures" : "couldn't find the pay date"]);
       } else {
         const k = K.parseK401(text);
-        if (k.periodEnd && k.end != null && !K.checkK401(k).length) { await saveK401(k); saved++; } else review.push(['k401', k]);
+        if (k.periodEnd && k.end != null && !K.checkK401(k).length) { await saveK401(k); saved++; } else review.push(['k401', k, f.name, k.periodEnd ? "the totals don't add up; check the figures" : "couldn't find the quarter or ending value"]);
       }
-    } catch (e) { console.error(e); review.push([kind === 'k401' ? 'k401' : 'paystub', {}]); }
+    } catch (e) { console.error(e); review.push([kind === 'k401' ? 'k401' : 'paystub', {}, f.name, "couldn't read this file; type the figures in"]); }
   }
   const done = `${saved} saved${dupes.length ? `, ${dupes.length} already in the app` : ''}${review.length ? `, ${review.length} need a look` : ''}.`;
   if (saved || dupes.length || !review.length) pr.done(done); else pr.fail(done);
-  for (const [as, r] of review) { if (as === 'paystub') paystubForm(r); else k401Form(r); await new Promise((res) => document.getElementById('sheet').addEventListener('close', res, { once: true })); }
+  for (const [i, [as, r, file, reason]] of review.entries()) { const ctx = { file, reason, i: i + 1, n: review.length }; if (as === 'paystub') paystubForm(r, ctx); else k401Form(r, ctx); await new Promise((res) => document.getElementById('sheet').addEventListener('close', res, { once: true })); }
 }
 
 function mountPaystubs(root) {
@@ -231,7 +246,7 @@ function settings() {
   <div class="card"><div class="row between"><h2>Categories</h2><button class="link" id="cat-new">Add</button></div><ul class="list">${cats.map((c) => h`<li class="tap" data-catedit="${c.id}"><span class="grow">${c.name}</span><span class="small muted">${c.archived ? 'hidden' : c.group || ''}${c.countsAsSpending === false ? ' · not spending' : ''}</span></li>`)}</ul></div>
   <div class="card"><div class="row between"><h2>Accounts</h2><button class="link" id="acct-new">Add</button></div><ul class="list">${accts.map((a) => h`<li class="tap" data-acctedit="${a.id}"><span class="grow">${a.name}</span><span class="small muted">${a.type}${a.closed ? ' · closed' : ''}</span></li>`)}</ul>
     <p class="small muted">Account numbers are never stored. Accounts are identified only by the names you give them.</p></div>
-  <div class="card"><h2>Merchant rules</h2><ul class="list">${S.all('rules').map((r) => h`<li><span class="grow">"${r.pattern}" → ${C.cat(r.catId)?.name || '—'}</span><button class="link" data-delrule="${r.id}">✕</button></li>`)}</ul>${S.all('rules').length ? '' : h`<p class="small muted">Rules are created when you categorize imported rows.</p>`}</div>
+  <div class="card"><h2>Merchant rules</h2><ul class="list">${S.all('rules').map((r) => h`<li><span class="grow">"${r.pattern}" → ${C.cat(r.catId)?.name || '—'}</span><button class="link x-btn" data-delrule="${r.id}" aria-label="Delete rule for ${r.pattern}">✕</button></li>`)}</ul>${S.all('rules').length ? '' : h`<p class="small muted">Rules are created when you categorize imported rows.</p>`}</div>
   </div>`;
 }
 const AUTH_MESSAGES = {
@@ -247,7 +262,6 @@ const AUTH_MESSAGES = {
 const authMessage = (e) => AUTH_MESSAGES[e.code] || (e.code ? `${e.code.replace('auth/', '').replace(/-/g, ' ')}` : e.message);
 function mountSettings(root) {
   root.querySelector('#fb-save')?.addEventListener('click', async () => { try { sync.saveConfig(root.querySelector('#fb-config').value); await sync.start(); location.reload(); } catch (e) { alert(e.message); } });
-  root.querySelectorAll('#fb-forget').forEach((b) => b.onclick = async () => { if (!confirm('Disconnect this device from sync? Data stays on this device.')) return; try { await sync.signOutNow(); } catch { /* not signed in */ } sync.forgetConfig(); location.reload(); });
   root.querySelector('#fb-out')?.addEventListener('click', () => sync.signOutNow());
   const login = root.querySelector('#fb-login');
   const go = async (create) => { const d = formData(login); try { await sync.signIn(d.email.trim().toLowerCase(), d.password, create); toast('Signed in'); } catch (e) { alert(authMessage(e)); } };
@@ -256,40 +270,51 @@ function mountSettings(root) {
     try { await sync.resetPassword(email); alert(`If ${email} has an account, a reset link is on its way. Check spam too.`); } catch (e) { alert(authMessage(e)); } });
   login?.addEventListener('submit', (e) => { e.preventDefault(); go(false); });
   root.querySelector('#fb-create')?.addEventListener('click', () => { if (login.reportValidity()) go(true); });
-  root.querySelector('#exp').onclick = () => {
-    const blob = new Blob([JSON.stringify(S.exportAll(), null, 1)], { type: 'application/json' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `finance-hub-backup-${today()}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  // On iPhone the share sheet lets you save straight to iCloud Drive; elsewhere it downloads.
+  root.querySelector('#exp').onclick = async () => {
+    const name = `finance-hub-backup-${today()}.json`, text = JSON.stringify(S.exportAll(), null, 1), file = new File([text], name, { type: 'application/json' });
+    if (navigator.canShare?.({ files: [file] }) && /iPhone|iPad/.test(navigator.userAgent)) {
+      try { await navigator.share({ files: [file], title: 'Finance Hub backup' }); toast('Backup ready'); return; } catch (e) { if (e.name === 'AbortError') return; }
+    }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    toast(`Saved ${name} to Downloads`);
   };
   root.querySelector('#imp').onchange = async (e) => { const f = e.target.files[0]; if (!f) return; if (!confirm('Replace all data on this device with this backup?')) return;
     try { await busy('Restoring backup', async () => S.importAll(JSON.parse(await f.text())), 'Backup restored'); } catch (err) { alert(err.message); } };
   root.querySelector('#wipe').onclick = async () => { if (confirm('Erase all Finance Hub data on this device? Export a backup first.') && confirm('Really erase everything?')) { await S.clearAll(); location.reload(); } };
   const prefs = S.setting('prefs');
-  root.querySelector('#pref-acct').onchange = (e) => S.saveSetting('prefs', { ...prefs, defaultAccount: e.target.value });
-  root.querySelector('#pref-cutoff').onchange = (e) => S.saveSetting('historyCutoff', e.target.value || null);
-  root.querySelector('#pref-oil').onchange = (e) => S.saveSetting('prefs', { ...prefs, oilInterval: parseInt(e.target.value) || 5000 });
+  root.querySelector('#pref-acct').onchange = async (e) => { await S.saveSetting('prefs', { ...S.setting('prefs'), defaultAccount: e.target.value }); toast('Default account saved'); };
+  root.querySelector('#pref-cutoff').onchange = async (e) => { await S.saveSetting('historyCutoff', e.target.value || null); toast(e.target.value ? 'Cutoff date saved' : 'Cutoff cleared'); };
+  root.querySelector('#pref-oil').onchange = async (e) => {
+    const n = parseInt(String(e.target.value).replace(/[,\s]/g, ''));
+    if (!(n >= 500 && n <= 30000)) { toast('Use a number of miles between 500 and 30,000'); e.target.value = S.setting('prefs').oilInterval || 5000; return; }
+    await S.saveSetting('prefs', { ...S.setting('prefs'), oilInterval: n }); toast('Oil change interval saved');
+  };
   root.querySelector('#pref-theme').onchange = (e) => { const v = e.target.value; v ? localStorage.setItem('theme', v) : localStorage.removeItem('theme'); applyTheme(); };
-  const catForm = (c = { name: '', group: 'Lifestyle', countsAsSpending: true, archived: false }) => openSheet(h`<h2>${c.id ? c.name : 'New category'}</h2><form class="form" id="kf">
+  const catForm = (c = { name: '', group: 'Lifestyle', countsAsSpending: true, archived: false }) => openSheet(h`<div class="row between"><h2>${c.id ? c.name : 'New category'}</h2><button class="link" data-close>Close</button></div><form class="form" id="kf">
     <label>Name<input name="name" value="${c.name}" required></label><label>Group<select name="group">${options(['Essentials', 'Lifestyle', 'Car', 'Giving', 'Taxes', 'Shared'].map((g) => [g, g]), c.group)}</select></label>
     <label class="check"><input type="checkbox" name="countsAsSpending" ${c.countsAsSpending !== false ? 'checked' : ''}> Counts as spending</label>
     <label class="check"><input type="checkbox" name="archived" ${c.archived ? 'checked' : ''}> Hidden from Quick add (kept in history)</label>
     <div class="row between"><button type="button" data-close>Cancel</button><button class="primary">Save</button></div></form>`, (r) => {
     r.querySelector('[data-close]').onclick = closeSheet;
-    r.querySelector('#kf').onsubmit = async (e) => { e.preventDefault(); const d = formData(e.target); await S.put('categories', { ...c, ...d, name: d.name.trim() }); closeSheet(); };
+    r.querySelector('#kf').onsubmit = async (e) => { e.preventDefault(); const d = formData(e.target); await S.put('categories', { ...c, ...d, name: d.name.trim() }); closeSheet(); toast('Category saved'); };
   });
-  const acctForm = (a = { name: '', type: 'checking', institution: '', isInvestment: false, isLiability: false }) => openSheet(h`<h2>${a.id ? a.name : 'New account'}</h2><form class="form" id="af">
-    <label>Name<input name="name" value="${a.name}" required></label><div class="two"><label>Type<input name="type" value="${a.type}"></label><label>Institution<input name="institution" value="${a.institution || ''}"></label></div>
+  const TYPES = [['checking', 'Checking', 0, 0], ['savings', 'Savings', 0, 0], ['CD', 'CD', 0, 0], ['credit card', 'Credit card', 0, 1], ['loan', 'Loan', 0, 1], ['brokerage', 'Brokerage', 1, 0], ['Roth IRA', 'Roth IRA', 1, 0], ['Roth 401k', 'Roth 401(k)', 1, 0], ['cash', 'Cash', 0, 0], ['Venmo', 'Venmo / PayPal', 0, 0]];
+  const acctForm = (a = { name: '', type: 'checking', institution: '', isInvestment: false, isLiability: false }) => openSheet(h`<div class="row between"><h2>${a.id ? a.name : 'New account'}</h2><button class="link" data-close>Close</button></div><form class="form" id="af">
+    <label>Name<input name="name" value="${a.name}" required></label><div class="two"><label>Type<select name="type">${options([...TYPES.map(([v, l]) => [v, l]), ...(TYPES.some(([v]) => v === a.type) ? [] : [[a.type, a.type]])], a.type)}</select></label><label>Institution<input name="institution" value="${a.institution || ''}"></label></div>
     <label class="check"><input type="checkbox" name="isInvestment" ${a.isInvestment ? 'checked' : ''}> Investment account (value from lots)</label>
     <label class="check"><input type="checkbox" name="isLiability" ${a.isLiability ? 'checked' : ''}> Money owed (credit card or loan)</label>
     <label class="check"><input type="checkbox" name="closed" ${a.closed ? 'checked' : ''}> Closed</label>
     <div class="row between"><button type="button" data-close>Cancel</button><button class="primary">Save</button></div></form>`, (r) => {
     r.querySelector('[data-close]').onclick = closeSheet;
-    r.querySelector('#af').onsubmit = async (e) => { e.preventDefault(); const d = formData(e.target); await S.put('accounts', { ...a, ...d, name: d.name.trim() }); closeSheet(); };
+    r.querySelector('[name=type]').onchange = (e) => { const t = TYPES.find(([v]) => v === e.target.value); if (t) { r.querySelector('[name=isInvestment]').checked = !!t[2]; r.querySelector('[name=isLiability]').checked = !!t[3]; } };
+    r.querySelector('#af').onsubmit = async (e) => { e.preventDefault(); const d = formData(e.target); await S.put('accounts', { ...a, ...d, name: d.name.trim() }); closeSheet(); toast('Account saved'); };
   });
   root.querySelector('#cat-new').onclick = () => catForm();
   root.querySelector('#acct-new').onclick = () => acctForm();
   root.querySelectorAll('[data-catedit]').forEach((el) => el.onclick = () => catForm(S.get('categories', el.dataset.catedit)));
   root.querySelectorAll('[data-acctedit]').forEach((el) => el.onclick = () => acctForm(S.get('accounts', el.dataset.acctedit)));
-  root.querySelectorAll('[data-delrule]').forEach((b) => b.onclick = () => S.remove('rules', b.dataset.delrule));
+  root.querySelectorAll('[data-delrule]').forEach((b) => b.onclick = async () => { const r = S.get('rules', b.dataset.delrule); await S.remove('rules', r.id); toast(`Rule for "${r.pattern}" deleted`, { action: 'Undo', onAction: () => S.put('rules', r) }); });
 }
 export function applyTheme() { const t = localStorage.getItem('theme'); t ? document.documentElement.setAttribute('data-theme', t) : document.documentElement.removeAttribute('data-theme'); }
 
