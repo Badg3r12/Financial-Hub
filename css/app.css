@@ -117,3 +117,15 @@ svg.chart text { fill: var(--muted); font-size: 11px; }
 .empty { text-align: center; color: var(--muted); padding: 24px 8px; }
 .only-phone { display: none; }
 @media (max-width: 767px) { .only-phone { display: block; } .only-desk { display: none; } }
+
+#progress { position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 10px); transform: translate(-50%, -140%); width: min(440px, calc(100vw - 32px)); background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 10px 14px 9px; z-index: 70; transition: transform .25s ease; }
+#progress.show { transform: translate(-50%, 0); }
+#progress .pr-row { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; font-weight: 600; margin-bottom: 7px; }
+#progress .pr-track { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; position: relative; }
+#progress .pr-fill { height: 100%; width: 0; background: var(--accent); border-radius: 3px; transition: width .3s ease; }
+#progress .pr-track.busy .pr-fill { position: absolute; width: 35%; animation: pr-slide 1.1s ease-in-out infinite; }
+#progress.done .pr-fill { background: var(--good); }
+#progress.failed .pr-fill { background: var(--bad); width: 100%; }
+#progress .pr-sub { margin-top: 5px; min-height: 1em; }
+@keyframes pr-slide { from { left: -35%; } to { left: 100%; } }
+@media (prefers-reduced-motion: reduce) { #progress { transition: none; } #progress .pr-track.busy .pr-fill { animation: none; left: 0; width: 100%; opacity: .5; } }
