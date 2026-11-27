@@ -22,7 +22,8 @@ async function applyPrices() {
   return fresh.length;
 }
 
-export function load() {
+export function load(retry) {
+  if (retry && !loaded()) loading = null;
   return (loading ||= Promise.all([json('data/prices.json'), json('data/holdings.json')]).then(async ([p, hd]) => {
     prices = p?.tickers ? p : null; holdings = hd?.funds ? hd : null;
     const n = await applyPrices();

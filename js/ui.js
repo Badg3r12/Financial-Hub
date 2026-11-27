@@ -2,16 +2,45 @@
 import { h, raw } from './util.js';
 
 const sheet = () => document.getElementById('sheet');
+let dirty = false; // something was typed or changed in the open sheet
 export function openSheet(html, onMount) {
-  const d = sheet(); document.getElementById('sheet-body').innerHTML = (html.__raw ?? html);
+  const d = sheet(), body = document.getElementById('sheet-body'); body.innerHTML = (html.__raw ?? html);
+  dirty = false;
   if (!d.open) d.showModal();
-  onMount?.(document.getElementById('sheet-body'));
+  body.scrollTop = 0;
+  body.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => closeSheet()));
+  onMount?.(body);
+  decorateTaps(body);
 }
-export function closeSheet() { const d = sheet(); if (d.open) d.close(); }
-document.addEventListener('click', (e) => { if (e.target.id === 'sheet') closeSheet(); });
+export function closeSheet() { const d = sheet(); dirty = false; if (d.open) d.close(); }
+// Tapping outside the sheet or pressing Escape asks first when the form has unsaved changes.
+const tryDismiss = () => { if (!dirty || confirm('Discard your changes?')) closeSheet(); };
+document.addEventListener('click', (e) => { if (e.target.id === 'sheet') tryDismiss(); });
+document.addEventListener('input', (e) => { if (e.target.closest?.('#sheet-body')) dirty = true; });
+document.addEventListener('change', (e) => { if (e.target.closest?.('#sheet-body')) dirty = true; });
+let cancelHooked = false;
+const hookCancel = () => { if (cancelHooked || !sheet()) return; cancelHooked = true; sheet().addEventListener('cancel', (e) => { e.preventDefault(); tryDismiss(); }); };
+hookCancel(); document.addEventListener('DOMContentLoaded', hookCancel);
 
+// Rows that open something on tap get keyboard focus and Enter/Space, like buttons.
+export function decorateTaps(root) {
+  root.querySelectorAll('.tap:not(a):not(button)').forEach((el) => { if (!el.hasAttribute('tabindex')) { el.tabIndex = 0; el.setAttribute('role', 'button'); } });
+}
+document.addEventListener('keydown', (e) => {
+  const el = e.target; if ((e.key === 'Enter' || e.key === ' ') && el?.classList?.contains('tap') && el.getAttribute('role') === 'button') { e.preventDefault(); el.click(); }
+});
+
+// Short message at the bottom. Shown inside an open sheet so it isn't hidden behind it.
+// toast('Deleted', { action: 'Undo', onAction: () => ... }) adds a button for a few seconds.
 let tt;
-export function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), 2600); }
+export function toast(msg, { action, onAction, ms } = {}) {
+  const t = document.getElementById('toast'), d = sheet();
+  (d?.open ? d : document.body).append(t);
+  t.innerHTML = ''; const span = document.createElement('span'); span.textContent = msg; t.append(span);
+  if (action) { const b = document.createElement('button'); b.type = 'button'; b.textContent = action; b.onclick = () => { t.classList.remove('show'); onAction?.(); }; t.append(b); }
+  t.classList.toggle('has-action', !!action); t.classList.add('show');
+  clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), ms || (action ? 6000 : 2600));
+}
 
 // Progress panel for anything that reads or saves files. Stays put while screens redraw.
 // const pr = progress('Reading statement'); pr.set(0.4, 'Page 2 of 5'); pr.done('Saved');  (set(null) = working, no %)
