@@ -1,0 +1,41 @@
+# Free market data for Finance Hub: refreshes data/prices.json every weekday evening and
+# data/holdings.json once a month, then commits them so GitHub Pages serves them with the app.
+name: Market data
+
+on:
+  schedule:
+    - cron: '30 22 * * 1-5'   # weekdays 22:30 UTC (after the US close, both standard and daylight time)
+    - cron: '0 12 3 * *'      # 3rd of each month: fund holdings
+  workflow_dispatch:
+    inputs:
+      what:
+        description: 'What to refresh'
+        default: 'prices holdings'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: market-data
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then WHAT="${{ github.event.inputs.what }}";
+          elif [ "${{ github.event.schedule }}" = "0 12 3 * *" ]; then WHAT="holdings";
+          else WHAT="prices"; fi
+          python3 tools/market_data.py $WHAT
+      - name: Commit
+        run: |
+          git config user.name "market-data-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f data/
+          if git diff --cached --quiet; then echo "No changes"; exit 0; fi
+          git commit -m "Update market data"
+          git push
