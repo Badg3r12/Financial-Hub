@@ -115,3 +115,5 @@ svg.chart text { fill: var(--muted); font-size: 11px; }
 .ring { width: 56px; height: 56px; }
 .notice { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
 .empty { text-align: center; color: var(--muted); padding: 24px 8px; }
+.only-phone { display: none; }
+@media (max-width: 767px) { .only-phone { display: block; } .only-desk { display: none; } }
