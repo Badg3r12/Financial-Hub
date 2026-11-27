@@ -14,7 +14,7 @@ export const syncState = () => ({ status, email: user?.email || null, lastSync, 
 // Sign-in and the Firestore rules (only your own account can read or write users/<your id>) are what protect the data.
 const BUILT_IN = { apiKey: 'AIzaSyAA0Ri1Ub3zuR4aDTHk31htFbo8j9YHAGI', authDomain: 'finance-hub-52289.firebaseapp.com', projectId: 'finance-hub-52289', appId: '1:87312358002:web:2160b4de401204d21ac0eb' };
 export function getConfig() {
-  try { const c = JSON.parse(localStorage.getItem(KEY)); if (c && /^AIza[\w-]{30,}$/.test(c.apiKey) && c.projectId) return c; } catch { /* ignore a bad saved config */ }
+  try { localStorage.removeItem(KEY); } catch { /* a config pasted by hand on older versions could be mistyped; never use it */ }
   return BUILT_IN;
 }
 // Accepts the snippet Firebase shows (const firebaseConfig = { apiKey: "...", ... }) or plain JSON.
