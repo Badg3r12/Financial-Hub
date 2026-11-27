@@ -10,6 +10,7 @@ script keeps the previous data for whatever it could not refresh and never write
 
 Sources (all public and keyless; checked Nov 2026):
   prices   api.nasdaq.com historical quotes (stocks, ETFs, mutual funds); Yahoo chart API as a fallback
+  sectors  api.nasdaq.com stock screener (sector + country for every US-listed stock), refreshed with holdings
   holdings Vanguard's fund-holdings API (Vanguard ETFs and mutual funds),
            Nasdaq-100 list with market caps (QQQ/QQQM, weights approximated from market cap),
            stockanalysis.com holdings page (top 25 for other ETFs; the rest shows as "Other")
@@ -201,6 +202,30 @@ def holdings(universe):
     print(f'holdings: {len(out)} funds; failed: {" ".join(failed) or "none"}')
 
 
+# ---------------- sectors ----------------
+def sectors(universe):
+    """data/sectors.json {T: [sector, country]} for the universe and every ticker inside the funds."""
+    want = set(universe['stocks'])
+    for f in ((load('holdings.json') or {}).get('funds') or {}).values():
+        want.update(h['ticker'] for h in f.get('holdings', []) if h.get('ticker'))
+    try:
+        d = json.loads(get('https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=10000&download=true'))
+        rows = d['data']['rows']
+    except Exception as e:  # noqa: BLE001
+        print(f'sectors: failed ({type(e).__name__}); keeping the previous file.')
+        return
+    out = {}
+    for r in rows:
+        t = norm(r.get('symbol'))
+        if t in want and (r.get('sector') or r.get('country')):
+            out[t] = [r.get('sector') or '', r.get('country') or '']
+    if len(out) < 50:
+        print('sectors: too few rows; keeping the previous file.')
+        return
+    save('sectors.json', {'updated': dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%MZ'), 'tickers': out})
+    print(f'sectors: {len(out)} tickers')
+
+
 if __name__ == '__main__':
     with open(os.path.join(ROOT, 'tools', 'universe.json')) as f:
         uni = json.load(f)
@@ -209,3 +234,6 @@ if __name__ == '__main__':
         prices(uni)
     if 'holdings' in what:
         holdings(uni)
+        sectors(uni)
+    elif 'sectors' in what:
+        sectors(uni)
