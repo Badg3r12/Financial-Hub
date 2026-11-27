@@ -9,7 +9,7 @@ import { applyTheme } from './views/more.js';
 const MODULES = ['home', 'budget', 'invest', 'goals', 'more', 'inbox', 'import'];
 const VIEWS = {};
 const TABS = [['home', 'Home'], ['budget', 'Budget'], ['invest', 'Invest'], ['goals', 'Goals'], ['more', 'More']];
-const TAB_FOR = { inbox: 'home', import: 'more', networth: 'more', car: 'more', settings: 'more', shared: 'budget', txns: 'budget', paystubs: 'more' };
+const TAB_FOR = { trades: 'invest', inbox: 'home', import: 'more', networth: 'more', car: 'more', settings: 'more', shared: 'budget', txns: 'budget', paystubs: 'more' };
 
 function route() { const [name, ...args] = (location.hash.slice(1) || 'home').split('/'); return { name: VIEWS[name] ? name : 'home', args: args.map(decodeURIComponent) }; }
 
