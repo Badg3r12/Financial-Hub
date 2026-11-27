@@ -1,7 +1,8 @@
 import * as S from '../store.js';
 import { h, money, money0, signed, pct, today, shortDate, groupBy, sum } from '../util.js';
 import * as C from '../calc.js';
-import { donut, line } from '../charts.js';
+import { donut, line, rangeTabs, filterRange } from '../charts.js';
+import * as P from './portfolio.js';
 import * as M from '../market.js';
 import { openSheet, closeSheet, toast, options, formData } from '../ui.js';
 
@@ -9,7 +10,7 @@ let sortKey = 'value', sortDir = -1;
 const invAccts = () => S.all('accounts').filter((a) => a.isInvestment);
 const cls = (v) => (v == null ? '' : v < 0 ? 'bad' : 'good');
 const m$ = (v) => (v == null ? '—' : money(v)), s$ = (v) => (v == null ? '—' : signed(v)), p$ = (v) => (v == null ? '—' : pct(v));
-const SUBTABS = (on) => h`<div class="tabs"><a href="#invest" class="${on === 'holdings' ? 'on' : ''}">Holdings</a><a href="#trades" class="${on === 'trades' ? 'on' : ''}">All buys &amp; sells</a><a href="#invest/exposure" class="${on === 'exposure' ? 'on' : ''}">Overlap &amp; exposure</a></div>`;
+const SUBTABS = (on) => h`<div class="tabs"><a href="#invest" class="${on === 'holdings' ? 'on' : ''}">Holdings</a><a href="#trades" class="${on === 'trades' ? 'on' : ''}">All buys &amp; sells</a><a href="#invest/performance" class="${on === 'performance' ? 'on' : ''}">Performance</a><a href="#invest/dividends" class="${on === 'dividends' ? 'on' : ''}">Dividends</a><a href="#invest/allocation" class="${on === 'allocation' ? 'on' : ''}">Allocation</a><a href="#invest/taxes" class="${on === 'taxes' ? 'on' : ''}">Taxes</a><a href="#invest/exposure" class="${on === 'exposure' ? 'on' : ''}">Overlap &amp; exposure</a></div>`;
 M.load(); // free daily prices + fund holdings published with the app (see tools/market_data.py)
 
 // One row per ticker (all accounts combined); accounts listed underneath.
@@ -25,8 +26,10 @@ function sorted(rows) {
   return [...rows].sort((a, b) => { const A = a[sortKey], B = b[sortKey]; return (typeof A === 'string' ? A.localeCompare(B) : (A ?? -1e15) - (B ?? -1e15)) * sortDir; });
 }
 
+const SUBVIEWS = { performance: ['Performance', P.performance, P.mountPerformance], dividends: ['Dividends', P.dividendsView], allocation: ['Allocation', P.allocationView, P.mountAllocation], taxes: ['Taxes', P.taxesView] };
 function render(sub) {
   if (sub === 'exposure') return exposure();
+  if (SUBVIEWS[sub]) return h`<h1>${SUBVIEWS[sub][0]}</h1>${SUBTABS(sub)}${SUBVIEWS[sub][1]()}`;
   const totals = C.accountTotals(), alloc = C.allocation(), k = C.k401(), ps = C.portfolioStats(), rows = combined();
   const tot = Object.values(totals).reduce((a, x) => ({ cost: a.cost + x.cost, value: a.value + x.value, day: a.day + x.day }), { cost: 0, value: 0, day: 0 });
   const all = tot.value + (k.value || 0);
@@ -64,11 +67,12 @@ function render(sub) {
 }
 
 // Price chart and returns from the published daily closes (hidden when the ticker isn't in the data).
+let holdRange = '1Y';
 function priceBlock(ticker) {
   const st = C.priceStats(ticker); if (!st) return '';
-  const hs = st.history.filter((x, i, a) => i === a.length - 1 || i % 5 === 0 || (a.length - i <= 260 && (x.close === st.high || x.close === st.low))); // weekly points (plus the 52-week high/low) keep the chart light
+  const hs = filterRange(st.history, holdRange, (x) => x.date).filter((x, i, a) => i === a.length - 1 || i % Math.max(1, Math.round(a.length / 60)) === 0 || (a.length - i <= 260 && (x.close === st.high || x.close === st.low))); // weekly points (plus the 52-week high/low) keep the chart light
   const pos = st.high > st.low ? (st.last.close - st.low) / (st.high - st.low) : 0.5;
-  return h`<div style="margin-bottom:14px">${line(hs.map((x) => ({ x: x.date, y: Math.round(x.close * 100) })), { height: 150, label: (q) => shortDate(q.x) })}
+  return h`<div style="margin-bottom:14px"><div class="row" style="justify-content:flex-end;margin-bottom:4px">${rangeTabs('hold', holdRange)}</div>${line(hs.map((x) => ({ x: x.date, y: Math.round(x.close * 100) })), { height: 150, label: (q) => shortDate(q.x), tone: 'auto', fmt: money })}
     <div class="grid" style="grid-template-columns:repeat(4,1fr);gap:8px;margin-top:8px">${stat('1 month', pct(st.r1m), cls(st.r1m))}${stat('3 months', pct(st.r3m), cls(st.r3m))}${stat('This year', pct(st.ytd), cls(st.ytd))}${stat('1 year', pct(st.r1y), cls(st.r1y))}</div>
     <div class="small muted" style="margin-top:10px">52-week range</div>
     <div class="row small num" style="gap:8px"><span>${money(Math.round(st.low * 100))}</span><span class="grow" style="position:relative;height:6px;border-radius:3px;background:var(--surface-2)"><span style="position:absolute;top:-3px;left:calc(${(pos * 100).toFixed(1)}% - 6px);width:12px;height:12px;border-radius:6px;background:var(--accent)"></span></span><span>${money(Math.round(st.high * 100))}</span></div>
@@ -95,6 +99,7 @@ export function holdingDetail(ticker) {
     <ul class="list">${[...p.lots].reverse().map((l) => tradeRow(l))}</ul>
     <p class="small muted">"Per year" is your money-weighted return: it accounts for when each dollar went in. Dividend reinvestments count as return, not new money.</p>`, (root) => {
     root.querySelectorAll('[data-dellot]').forEach((b) => b.onclick = () => deleteLot(b.dataset.dellot, () => holdingDetail(ticker)));
+    root.querySelectorAll('[data-range^="hold:"]').forEach((b) => b.onclick = () => { holdRange = b.dataset.range.split(':')[1]; holdingDetail(ticker); });
     root.querySelector('#hd-add').onclick = () => addLot({ ticker, acctId: p.hs[0]?.acctId });
     root.querySelector('a[href^="#trades"]').onclick = () => { tradeFilter = { acct: '', kind: '' }; closeSheet(); };
   });
@@ -198,6 +203,7 @@ function updatePrices() {
 
 function mount(root, sub) {
   if (sub === 'exposure') return mountExposure(root);
+  if (SUBVIEWS[sub]) return SUBVIEWS[sub][2]?.(root);
   root.querySelector('#add-lot').onclick = () => addLot();
   root.querySelector('#prices').onclick = updatePrices;
   root.querySelectorAll('[data-sort]').forEach((th) => th.onclick = () => { const key = th.dataset.sort; sortDir = sortKey === key ? -sortDir : (key === 'ticker' || key === 'accts' ? 1 : -1); sortKey = key; rerender(); });

@@ -18,7 +18,7 @@ function render(month = thisMonth(), mode = 'month') {
   return h`<div class="row between wrap"><h1>Budget</h1>${picker}</div>
   <div class="tabs"><a href="#budget/${month}" class="${mode === 'month' ? 'on' : ''}">Month</a><a href="#budget/${month}/year" class="${mode === 'year' ? 'on' : ''}">Year grid</a>
     <a href="#budget/${month}/since" class="${mode === 'since' ? 'on' : ''}">Since July</a></div>
-  <div class="row wrap small" style="gap:14px;margin:-4px 0 12px"><a href="#txns">All transactions ›</a><a href="#shared">Shared costs ›</a></div>
+  <div class="row wrap small" style="gap:14px;margin:-4px 0 12px"><a href="#txns">All transactions ›</a><a href="#trends">Trends ›</a><a href="#subscriptions">Subscriptions ›</a><a href="#cashflow">Cash flow ›</a><a href="#shared">Shared costs ›</a></div>
   ${isCollege(month) ? h`<p class="notice">College-era month: shown as history only. Budgets and averages use July 2026 onward.</p>` : ''}
   ${mode === 'year' ? yearGrid(y) : mode === 'since' ? since(tm) : h`
   <div class="grid cols-3" style="margin-bottom:14px">
@@ -106,22 +106,48 @@ function shared() {
     <div class="card">${months.length ? h`<ul class="list">${months.map((m) => h`<li><div class="grow"><b>${monthName(m)}</b><div class="small muted">${Object.entries(by[m]).map(([c, v]) => `${C.cat(c)?.name || '—'} ${money0(v)}`).join(' · ')}</div></div><div class="num">${money0(sum(Object.values(by[m])))}</div></li>`)}</ul>` : h`<p class="muted">No shared costs.</p>`}</div>`;
 }
 
-// ---- All transactions, optionally filtered by month and category ----
-function txns(month, catId) {
-  if (month === 'all') month = null;
+// ---- All transactions, optionally filtered by month and category, with search ----
+const q = { text: '', min: '', max: '', acct: '' }; // kept while you move around the app
+function filtered(month, catId) {
   let list = S.all('txns').filter((t) => t.status !== 'review');
   if (month) list = list.filter((t) => ym(t.date) === month);
   if (catId) list = list.filter((t) => t.catId === catId);
-  list.sort((a, b) => b.date.localeCompare(a.date));
-  const shown = list.slice(0, 300), counted = sum(list.filter(C.isPersonal), (t) => t.amount), other = sum(list, (t) => t.amount) - counted;
+  const words = q.text.trim().toLowerCase().split(/\s+/).filter(Boolean), lo = toCents(q.min), hi = toCents(q.max);
+  if (words.length) list = list.filter((t) => { const hay = `${t.merchant || ''} ${t.note || ''} ${C.cat(t.catId)?.name || ''} ${(t.amount / 100).toFixed(2)}`.toLowerCase(); return words.every((w) => hay.includes(w)); });
+  if (lo != null) list = list.filter((t) => t.amount >= lo);
+  if (hi != null) list = list.filter((t) => t.amount <= hi);
+  if (q.acct) list = list.filter((t) => t.acctId === q.acct);
+  return list.sort((a, b) => b.date.localeCompare(a.date));
+}
+function txnList(list, month, c) {
+  const shown = list.slice(0, 300), counted = sum(list.filter(C.isPersonal), (t) => t.amount), other = sum(list, (t) => t.amount) - counted, catId = c?.id;
+  return h`<p class="muted">${month ? monthName(month) : 'All months'} · ${list.length} transaction${list.length === 1 ? '' : 's'} · <b>${money(counted)}</b> counts toward the budget${other ? ` · ${money(other)} one-off, shared or reimbursed` : ''}${c && month ? raw(` · <a href="#txns/all/${catId}">All months for ${c.name.replace(/</g, '&lt;')}</a>`) : ''}</p>
+    <div class="card"><ul class="list">${shown.length ? shown.map(txnRow) : h`<li class="muted">${q.text || q.min || q.max || q.acct ? 'Nothing matches the search.' : c ? `No ${c.name} spending ${month ? 'in ' + monthName(month) : 'yet'}.` : 'No transactions yet. Tap + to add one.'}</li>`}</ul>${list.length > 300 ? h`<p class="small muted">Showing the latest 300.</p>` : ''}</div>`;
+}
+function txns(month, catId) {
+  if (month === 'all') month = null;
   const c = catId && C.cat(catId), yr = C.budgetYear(month || thisMonth());
+  const accts = S.all('accounts').filter((a) => !a.isInvestment);
   return h`<div class="row between wrap"><h1>${c ? c.name : 'Transactions'}</h1>${c ? h`<button id="tx-budget" data-cat="${catId}" data-year="${yr}">Edit ${yr} budget</button>` : ''}</div>
-    <p class="muted">${month ? monthName(month) : 'All months'} · ${list.length} transaction${list.length === 1 ? '' : 's'} · <b>${money(counted)}</b> counts toward the budget${other ? ` · ${money(other)} one-off, shared or reimbursed` : ''}${c && month ? raw(` · <a href="#txns/all/${catId}">All months for ${c.name.replace(/</g, '&lt;')}</a>`) : ''}</p>
-    <div class="card"><ul class="list">${shown.length ? shown.map(txnRow) : h`<li class="muted">${c ? `No ${c.name} spending ${month ? 'in ' + monthName(month) : 'yet'}.` : 'No transactions yet. Tap + to add one.'}</li>`}</ul>${list.length > 300 ? h`<p class="small muted">Showing the latest 300.</p>` : ''}</div>`;
+    <div class="row wrap" style="gap:8px;margin-bottom:12px"><input id="tx-q" type="search" placeholder="Search merchant, note, category or amount" value="${q.text}" style="flex:1 1 220px" aria-label="Search transactions">
+      <input id="tx-min" inputmode="decimal" placeholder="Min $" value="${q.min}" style="width:90px" aria-label="Minimum amount"><input id="tx-max" inputmode="decimal" placeholder="Max $" value="${q.max}" style="width:90px" aria-label="Maximum amount">
+      <select id="tx-acct" style="width:auto" aria-label="Account">${options([['', 'All accounts'], ...accts.map((a) => [a.id, a.name])], q.acct)}</select>
+      ${q.text || q.min || q.max || q.acct ? h`<button class="link" id="tx-clear">Clear</button>` : ''}</div>
+    <div id="tx-results">${txnList(filtered(month, catId), month, c)}</div>`;
+}
+function mountTxns(root, month, catId) {
+  if (month === 'all') month = null;
+  bindTxnRows(root); root.querySelector('#tx-budget')?.addEventListener('click', (e) => editBudget(e.target.dataset.cat, +e.target.dataset.year));
+  const box = root.querySelector('#tx-results'), c = catId && C.cat(catId);
+  const update = () => { box.innerHTML = txnList(filtered(month, catId), month, c).__raw; bindTxnRows(box); };
+  let t; const on = (id, key) => root.querySelector(id).addEventListener('input', (e) => { q[key] = e.target.value; clearTimeout(t); t = setTimeout(update, 120); });
+  on('#tx-q', 'text'); on('#tx-min', 'min'); on('#tx-max', 'max');
+  root.querySelector('#tx-acct').onchange = (e) => { q.acct = e.target.value; update(); };
+  root.querySelector('#tx-clear')?.addEventListener('click', () => { Object.assign(q, { text: '', min: '', max: '', acct: '' }); window.dispatchEvent(new HashChangeEvent('hashchange')); });
 }
 
 export const views = {
   budget: { render, mount },
   shared: { render: shared },
-  txns: { render: txns, mount: (root) => { bindTxnRows(root); root.querySelector('#tx-budget')?.addEventListener('click', (e) => editBudget(e.target.dataset.cat, +e.target.dataset.year)); } },
+  txns: { render: txns, mount: mountTxns },
 };

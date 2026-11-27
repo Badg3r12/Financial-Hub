@@ -5,11 +5,15 @@ import { line } from '../charts.js';
 import { openSheet, closeSheet, toast, options, formData, progress, busy } from '../ui.js';
 import { parsePaystub, checkPaystub, PAYSTUB_FIELDS } from '../import/paystub.js';
 import * as sync from '../sync.js';
+import { saveBackup, lastBackup, cloudIds, redirectUri } from '../backup.js';
+import * as Lock from '../lock.js';
 
 function render() {
   const links = [['networth', 'Net worth', 'Snapshots, account breakdown, unexplained differences'], ['paystubs', 'Paystubs & 401k', 'Income, taxes, Roth 401k and match'],
     ['inbox', 'Inbox', 'Imported rows waiting for review'], ['import', 'Import', 'Statements, Vanguard files, history from the spreadsheets'],
-    ['shared', 'Shared costs', 'College-era costs not paid by you'], ['car', 'Car log', 'Service history and next oil change'], ['settings', 'Settings', 'Backup, categories, accounts, theme']];
+    ['shared', 'Shared costs', 'College-era costs not paid by you'], ['car', 'Car log', 'Service history and next oil change'], ['settings', 'Settings', 'Backup, Face ID, categories, accounts, theme'],
+    ['review', 'Monthly review', 'Income, spending, savings and investments for a month'], ['plan', 'Plan', 'Savings rate, projections, Roth IRA, 401(k)'], ['cashflow', 'Cash flow', 'Paydays and bills coming up'],
+    ['subscriptions', 'Subscriptions & bills', 'Repeating charges, yearly cost, price increases'], ['trends', 'Spending trends', 'Each category by month, year over year'], ['health', 'Data health', 'Missing prices, stale balances, backup, rule suggestions'], ['glance', 'At a glance', 'Just the big numbers']];
   return h`<h1>More</h1><div class="card"><ul class="list">${links.map(([k, t, d]) => h`<li class="menu-row"><a href="#${k}" style="text-decoration:none;color:inherit;display:flex;align-items:center;width:100%;min-height:44px"><span class="grow"><b>${t}</b><div class="small muted">${d}</div></span><span class="muted" aria-hidden="true" style="font-size:20px">›</span></a></li>`)}</ul></div>`;
 }
 
@@ -234,15 +238,22 @@ function settings() {
       <form class="form" id="fb-login"><input name="email" type="email" autocomplete="username" placeholder="Email" required><input name="password" type="password" autocomplete="current-password" placeholder="Password" required minlength="6">
       <div class="row wrap"><button class="primary">Sign in</button><button type="button" id="fb-create">Create account</button><button type="button" class="link" id="fb-reset">Forgot password</button></div></form>`}</div>`;
   return h`<h1>Settings</h1><div class="grid cols-2">${syncCard}
-  <div class="card stack"><h2>Backup</h2><p class="small muted">Your data lives on this device${sy.email ? ' and in your Firebase project' : ''}. Export a backup regularly and keep it in iCloud Drive.</p>
-    <div class="row wrap"><button class="primary" id="exp">Export backup</button><label class="btn" style="color:var(--text)">Restore from backup<input type="file" id="imp" accept=".json,application/json" hidden></label></div>
+  <div class="card stack"><h2>Backup</h2><p class="small muted">Your data lives on this device${sy.email ? ' and in your Firebase project' : ''}. Back up regularly to iCloud Drive, Google Drive, OneDrive or this device. Last backup from this device: <b>${lastBackup() || 'never'}</b>.</p>
+    <div class="row wrap"><button class="primary" id="exp">Back up…</button><label class="btn" style="color:var(--text)">Restore from backup<input type="file" id="imp" accept=".json,application/json" hidden></label></div>
+    <details><summary>Upload straight to Google Drive or OneDrive (optional)</summary><div class="form" style="margin-top:8px">
+      <p class="small muted" style="margin:0">Without these, the backup is saved to Downloads and the drive's website opens so you can drag it in. With them, it uploads directly after you sign in. Both IDs are free and not secret; the README has the steps. Add this as the redirect address: <code style="word-break:break-all">${redirectUri()}</code></p>
+      <label>Google OAuth client ID<input id="cb-google" value="${cloudIds().google || ''}" placeholder="…apps.googleusercontent.com" autocomplete="off" spellcheck="false"></label>
+      <label>Microsoft application (client) ID<input id="cb-onedrive" value="${cloudIds().onedrive || ''}" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off" spellcheck="false"></label></div></details>
     <button class="danger" id="wipe">Erase all data on this device</button></div>
+  <div class="card stack"><h2>Face ID lock</h2><p class="small muted">Ask for Face ID or Touch ID when the app opens and after 5 minutes away. It keeps others out of the app on this device; it doesn't encrypt your data. Set it up on each device separately.</p>
+    <label class="check"><input type="checkbox" id="lock-on" ${Lock.enabled() ? 'checked' : ''}> Require Face ID / Touch ID</label><p class="small muted" id="lock-msg" style="margin:0"></p></div>
   <div class="card stack"><h2>Preferences</h2>
     <label>Default account for Quick add<select id="pref-acct">${options(accts.filter((a) => !a.isInvestment).map((a) => [a.id, a.name]), prefs.defaultAccount)}</select></label>
     <label>Spreadsheet history covers spending through<input type="date" id="pref-cutoff" value="${S.setting('historyCutoff', '') || ''}"></label>
     <p class="small muted" style="margin-top:-6px">Statement rows on or before this date are skipped, because the spreadsheet already counted them. After it, the app is the record.</p>
     <label>Oil change interval (miles)<input id="pref-oil" inputmode="numeric" value="${prefs.oilInterval || 5000}"></label>
-    <label>Theme<select id="pref-theme">${options([['', 'Follow device'], ['light', 'Light'], ['dark', 'Dark']], localStorage.getItem('theme') || '')}</select></label></div>
+    <label>Theme<select id="pref-theme">${options([['', 'Follow device'], ['light', 'Light'], ['dark', 'Dark']], localStorage.getItem('theme') || '')}</select></label>
+    <label>Accent color<select id="pref-accent">${options([['', 'Green'], ['blue', 'Blue'], ['purple', 'Purple'], ['orange', 'Orange'], ['rose', 'Rose'], ['slate', 'Slate']], localStorage.getItem('accent') || '')}</select></label></div>
   <div class="card"><div class="row between"><h2>Categories</h2><button class="link" id="cat-new">Add</button></div><ul class="list">${cats.map((c) => h`<li class="tap" data-catedit="${c.id}"><span class="grow">${c.name}</span><span class="small muted">${c.archived ? 'hidden' : c.group || ''}${c.countsAsSpending === false ? ' · not spending' : ''}</span></li>`)}</ul></div>
   <div class="card"><div class="row between"><h2>Accounts</h2><button class="link" id="acct-new">Add</button></div><ul class="list">${accts.map((a) => h`<li class="tap" data-acctedit="${a.id}"><span class="grow">${a.name}</span><span class="small muted">${a.type}${a.closed ? ' · closed' : ''}</span></li>`)}</ul>
     <p class="small muted">Account numbers are never stored. Accounts are identified only by the names you give them.</p></div>
@@ -271,13 +282,11 @@ function mountSettings(root) {
   login?.addEventListener('submit', (e) => { e.preventDefault(); go(false); });
   root.querySelector('#fb-create')?.addEventListener('click', () => { if (login.reportValidity()) go(true); });
   // On iPhone the share sheet lets you save straight to iCloud Drive; elsewhere it downloads.
-  root.querySelector('#exp').onclick = async () => {
-    const name = `finance-hub-backup-${today()}.json`, text = JSON.stringify(S.exportAll(), null, 1), file = new File([text], name, { type: 'application/json' });
-    if (navigator.canShare?.({ files: [file] }) && /iPhone|iPad/.test(navigator.userAgent)) {
-      try { await navigator.share({ files: [file], title: 'Finance Hub backup' }); toast('Backup ready'); return; } catch (e) { if (e.name === 'AbortError') return; }
-    }
-    const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    toast(`Saved ${name} to Downloads`);
+  root.querySelector('#exp').onclick = () => saveBackup();
+  for (const k of ['google', 'onedrive']) root.querySelector('#cb-' + k).onchange = async (e) => {
+    const v = e.target.value.trim(), ok = !v || (k === 'google' ? /^[\w-]+\.apps\.googleusercontent\.com$/.test(v) : /^[0-9a-f-]{36}$/i.test(v));
+    if (!ok) return toast(k === 'google' ? 'That doesn\'t look like a Google client ID (it ends in .apps.googleusercontent.com)' : 'That doesn\'t look like a Microsoft client ID (36 characters with dashes)');
+    await S.saveSetting('cloudBackup', { ...cloudIds(), [k]: v || undefined }); toast(v ? 'Saved' : 'Removed');
   };
   root.querySelector('#imp').onchange = async (e) => { const f = e.target.files[0]; if (!f) return; if (!confirm('Replace all data on this device with this backup?')) return;
     try { await busy('Restoring backup', async () => S.importAll(JSON.parse(await f.text())), 'Backup restored'); } catch (err) { alert(err.message); } };
@@ -289,6 +298,13 @@ function mountSettings(root) {
     const n = parseInt(String(e.target.value).replace(/[,\s]/g, ''));
     if (!(n >= 500 && n <= 30000)) { toast('Use a number of miles between 500 and 30,000'); e.target.value = S.setting('prefs').oilInterval || 5000; return; }
     await S.saveSetting('prefs', { ...S.setting('prefs'), oilInterval: n }); toast('Oil change interval saved');
+  };
+  root.querySelector('#pref-accent').onchange = (e) => { const v = e.target.value; v ? localStorage.setItem('accent', v) : localStorage.removeItem('accent'); applyTheme(); };
+  root.querySelector('#lock-on').onchange = async (e) => {
+    const msg = root.querySelector('#lock-msg');
+    if (!e.target.checked) { Lock.disable(); toast('Face ID lock off'); return; }
+    if (!(await Lock.supported())) { e.target.checked = false; msg.textContent = 'This device or browser has no Face ID / Touch ID available to websites.'; return; }
+    try { await Lock.enable(); toast('Face ID lock on'); } catch (err) { e.target.checked = false; msg.textContent = err.name === 'NotAllowedError' ? 'Cancelled.' : 'Could not set up: ' + err.message; }
   };
   root.querySelector('#pref-theme').onchange = (e) => { const v = e.target.value; v ? localStorage.setItem('theme', v) : localStorage.removeItem('theme'); applyTheme(); };
   const catForm = (c = { name: '', group: 'Lifestyle', countsAsSpending: true, archived: false }) => openSheet(h`<div class="row between"><h2>${c.id ? c.name : 'New category'}</h2><button class="link" data-close>Close</button></div><form class="form" id="kf">
@@ -316,7 +332,10 @@ function mountSettings(root) {
   root.querySelectorAll('[data-acctedit]').forEach((el) => el.onclick = () => acctForm(S.get('accounts', el.dataset.acctedit)));
   root.querySelectorAll('[data-delrule]').forEach((b) => b.onclick = async () => { const r = S.get('rules', b.dataset.delrule); await S.remove('rules', r.id); toast(`Rule for "${r.pattern}" deleted`, { action: 'Undo', onAction: () => S.put('rules', r) }); });
 }
-export function applyTheme() { const t = localStorage.getItem('theme'); t ? document.documentElement.setAttribute('data-theme', t) : document.documentElement.removeAttribute('data-theme'); }
+export function applyTheme() {
+  const t = localStorage.getItem('theme'), ac = localStorage.getItem('accent'), el = document.documentElement;
+  t ? el.setAttribute('data-theme', t) : el.removeAttribute('data-theme'); ac ? el.setAttribute('data-accent', ac) : el.removeAttribute('data-accent');
+}
 
 export const views = {
   more: { render }, networth: { render: networth, mount: mountNetworth }, car: { render: car, mount: mountCar },

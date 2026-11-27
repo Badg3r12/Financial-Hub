@@ -2,6 +2,7 @@ import * as S from '../store.js';
 import { h, money, money0, today, shortDate, toCents, pct } from '../util.js';
 import * as C from '../calc.js';
 import { ring } from '../charts.js';
+import { goalPace } from '../insights.js';
 import { openSheet, closeSheet, toast, options, formData } from '../ui.js';
 
 function render() {
@@ -17,7 +18,8 @@ function render() {
   ${bucketAccts.map((id) => { const b = C.buckets(id); return h`<div class="notice" style="margin-bottom:12px">Savings buckets in <b>${C.acct(id)?.name}</b>: ${money(b.inBuckets)} in buckets${b.balance != null ? h` of ${money(b.balance)} balance (${shortDate(b.asOf)}) · <span class="${b.unassigned < 0 ? 'warn' : ''}">${money(b.unassigned)} not in a bucket</span>` : ''}</div>`; })}
   <div class="grid cols-3">${funds.map((f) => { const st = C.fundStatus(f); return h`<div class="card tap" data-fund="${f.id}">
     <div class="row">${ring(st.progress ?? 0)}<div class="grow"><b>${f.name}</b><div class="num">${money(st.bal)}${f.target ? h` <span class="muted">of ${money0(f.target)}</span>` : ''}</div>
-    <div class="small ${st.onTrack === false ? 'warn' : st.onTrack ? 'good' : 'muted'}">${st.onTrack == null ? 'Set a target' : st.onTrack ? `On track · ${pct(st.progress, 0)}` : `Behind · due ${shortDate(f.targetDate)}`}</div></div></div></div>`; })}</div>
+    <div class="small ${st.onTrack === false ? 'warn' : st.onTrack ? 'good' : 'muted'}">${st.onTrack == null ? 'Set a target' : st.onTrack ? `On track · ${pct(st.progress, 0)}` : `Behind · due ${shortDate(f.targetDate)}`}</div>
+    ${paceLine(f)}</div></div></div>`; })}</div>
   <div class="grid cols-2" style="margin-top:14px">
     <div class="card"><div class="row between"><h2>Paycheck template</h2><button class="link" id="g-tpl">Edit</button></div>
       <p class="small muted">Net ${money(pay.net)} · Roth 401k ${money(pay.k401)}</p>
@@ -28,6 +30,13 @@ function render() {
     <div class="card"><h2>Contribution history</h2><ul class="list">${contribs.slice(0, 40).map((c) => h`<li><div class="grow">${S.get('funds', c.fundId)?.name || '—'}<div class="small muted">${shortDate(c.date)}${c.note ? ' · ' + c.note : ''}</div></div><span class="num ${c.amount < 0 ? 'bad' : ''}">${money(c.amount)}</span><button class="link x-btn" data-delc="${c.id}" aria-label="Delete ${S.get('funds', c.fundId)?.name || ''} ${money(c.amount)} on ${shortDate(c.date)}">✕</button></li>`)}</ul>
       ${contribs.length ? '' : h`<p class="muted">No contributions yet.</p>`}</div>
   </div>`;
+}
+
+// Autopilot: what this goal needs each month to hit its date, against what's actually gone in lately.
+function paceLine(f) {
+  const p = goalPace(f); if (!f.target || p.done) return '';
+  const tip = p.need != null ? `Needs ${money0(p.need)}/mo · you've averaged ${money0(p.actual)}` : `Averaging ${money0(p.actual)}/mo`;
+  return h`<div class="small muted" style="margin-top:2px">${tip}${p.eta && p.need == null ? ` · done about ${p.eta}` : ''}${p.need != null && p.actual < p.need ? h` · <b class="warn">${money0(p.need - p.actual)} short</b>` : ''}</div>`;
 }
 
 function editFund(f = { name: '', target: null, targetDate: null }) {

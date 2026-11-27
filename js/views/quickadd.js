@@ -57,7 +57,7 @@ export function openQuickAdd(existing) {
       </details>
     </div>
     <div class="sheet-actions stack" style="gap:8px;margin-top:14px"><p class="form-error" id="qa-err" role="alert"></p><div class="row between">
-      ${existing ? h`<button type="button" class="danger" id="qa-del">Delete</button>` : raw('<span></span>')}
+      ${existing ? h`<span class="row"><button type="button" class="danger" id="qa-del">Delete</button><button type="button" id="qa-split">Split…</button></span>` : raw('<span></span>')}
       <button class="primary" type="submit">${existing ? 'Save' : 'Add'}</button>
     </div></div>
     </form>`;
@@ -79,6 +79,7 @@ export function openQuickAdd(existing) {
       txt.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); root.querySelector('#qa-form').requestSubmit(); } };
       if (window.matchMedia('(min-width: 768px)').matches) txt.focus();
     }
+    root.querySelector('#qa-split')?.addEventListener('click', () => splitTxn(S.get('txns', existing.id) || existing));
     root.querySelector('#qa-del')?.addEventListener('click', async () => {
       const doc = S.get('txns', existing.id); await S.remove('txns', existing.id); closeSheet();
       toast(`Deleted ${money(doc.amount)}`, { action: 'Undo', onAction: () => S.put('txns', doc) });
@@ -89,6 +90,37 @@ export function openQuickAdd(existing) {
       if (!t.catId) { root.querySelector('#qa-cats').classList.add('missing'); root.querySelector('#qa-cats').scrollIntoView({ block: 'center', behavior: 'smooth' }); return err('Pick a category.'); }
       const doc = { ...t, amount: cents, date: f.date, acctId: f.acctId, note: f.note.trim(), oneOff: f.oneOff, reimb: f.reimb, payer: f.shared ? 'shared' : 'me', origin: t.origin || 'quick', status: t.status === 'review' ? 'review' : 'ok' };
       await S.put('txns', doc); closeSheet(); toast(existing ? 'Saved' : `Added ${money(cents)}`);
+    };
+  });
+}
+
+// Split one charge across categories (e.g. a Costco run: groceries + household). The first part keeps the original
+// record (so re-importing the statement still recognizes it); the other parts are new transactions linked to it.
+export function splitTxn(t) {
+  const cats = catsByUse();
+  const row = (catId = '', amt = '') => h`<div class="two split-row"><label>Category<select name="cat">${options([['', 'Choose…'], ...cats.map((c) => [c.id, c.name])], catId)}</select></label><label>Amount<input name="amt" inputmode="decimal" value="${amt}" placeholder="0.00"></label></div>`;
+  openSheet(h`<div class="row between"><h2>Split ${money(t.amount)}</h2><button class="link" data-close>Close</button></div>
+    <p class="small muted" style="margin-top:0">${t.note || t.merchant || ''} · ${t.date}</p>
+    <form class="form" id="sp"><div id="sp-rows">${row(t.catId, (t.amount / 100).toFixed(2))}${row()}</div>
+    <button type="button" class="link" id="sp-add" style="justify-self:start">+ Add another part</button>
+    <p class="small" id="sp-left"></p><p class="form-error" id="sp-err" role="alert"></p>
+    <div class="row between sheet-actions"><button type="button" data-close>Cancel</button><button class="primary">Save split</button></div></form>`, (root) => {
+    const form = root.querySelector('#sp'), parts = () => [...root.querySelectorAll('.split-row')].map((r) => ({ catId: r.querySelector('[name=cat]').value, amount: toCents(r.querySelector('[name=amt]').value) || 0 }));
+    const left = () => { const l = t.amount - parts().reduce((a, p) => a + p.amount, 0); root.querySelector('#sp-left').innerHTML = l === 0 ? '<span class="good">Adds up.</span>' : `<span class="warn">${money(l)} ${l > 0 ? 'left to assign' : 'too much'}</span>`; return l; };
+    // Typing in a later part takes it from the first part, so the total stays the same.
+    form.oninput = (e) => { const rows = [...root.querySelectorAll('.split-row')]; if (e.target.name === 'amt' && e.target !== rows[0].querySelector('[name=amt]')) { const rest = parts().slice(1).reduce((a, p) => a + p.amount, 0); rows[0].querySelector('[name=amt]').value = ((t.amount - rest) / 100).toFixed(2); } left(); };
+    root.querySelector('#sp-add').onclick = () => { root.querySelector('#sp-rows').insertAdjacentHTML('beforeend', row().__raw); left(); };
+    left();
+    form.onsubmit = async (e) => {
+      e.preventDefault(); const ps = parts().filter((p) => p.amount), err = root.querySelector('#sp-err');
+      if (ps.length < 2) return void (err.textContent = 'Give at least two parts an amount.');
+      if (ps.some((p) => !p.catId)) return void (err.textContent = 'Choose a category for each part.');
+      if (left() !== 0) return void (err.textContent = 'The parts need to add up to the original amount.');
+      const before = { ...t }, [first, ...rest] = ps;
+      const extra = rest.map((p) => ({ ...t, id: undefined, fid: undefined, amount: p.amount, catId: p.catId, splitOf: t.id, origin: 'split' }));
+      await S.put('txns', { ...t, amount: first.amount, catId: first.catId, splitTotal: t.splitTotal || t.amount });
+      await S.putMany('txns', extra); closeSheet();
+      toast(`Split into ${ps.length} parts`, { action: 'Undo', onAction: async () => { await S.removeMany('txns', extra.map((x) => x.id)); await S.put('txns', before); } });
     };
   });
 }
