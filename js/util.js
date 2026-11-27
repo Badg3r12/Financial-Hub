@@ -15,9 +15,11 @@ export function toCents(v) {
 }
 
 const fmtUSD = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
-export const money = (c) => (c === null || c === undefined || isNaN(c)) ? '—' : fmtUSD.format(c / 100);
-export const money0 = (c) => (c === null || c === undefined || isNaN(c)) ? '—' :
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(c / 100);
+// Privacy mode (eye button) shows every dollar amount as $••• until it's turned off.
+const hidden = () => typeof document !== 'undefined' && document.documentElement.classList.contains('private');
+export const money = (c) => (c === null || c === undefined || isNaN(c)) ? '—' : hidden() ? '$•••' : fmtUSD.format(c / 100);
+const fmtUSD0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+export const money0 = (c) => (c === null || c === undefined || isNaN(c)) ? '—' : hidden() ? '$•••' : fmtUSD0.format(c / 100);
 export const pct = (x, d = 1) => (x === null || !isFinite(x)) ? '—' : (x * 100).toFixed(d) + '%';
 export const signed = (c) => (c > 0 ? '+' : '') + money(c);
 

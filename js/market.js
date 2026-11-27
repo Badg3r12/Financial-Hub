@@ -1,13 +1,16 @@
 // Free market data that the repo's GitHub Action publishes next to the app:
 //   data/prices.json   { asOf, dates:[...], tickers:{ T:{ last, prior, date, closes:[...one per date, null if missing] } } }
 //   data/holdings.json { alias:{ T: T2 }, funds:{ T:{ asOf, source, note, holdings:[{ticker,name,weight}] } } }
+//   data/sectors.json  { tickers:{ T:[sector, country] } }
 // Same-origin fetch, so the service worker serves the last copy when offline.
 import * as S from './store.js';
 
-let prices = null, holdings = null, loading = null;
+let prices = null, holdings = null, sectors = null, loading = null;
 export const loaded = () => !!(prices || holdings);
 export const pricesData = () => prices;
 export const holdingsData = () => holdings;
+// [sector, country] for a US-listed ticker (data/sectors.json), or null.
+export const sectorOf = (t) => sectors?.tickers?.[t] || null;
 
 async function json(url) {
   try { const r = await fetch(url, { cache: 'no-cache' }); return r.ok ? await r.json() : null; } catch { return null; }
@@ -24,8 +27,8 @@ async function applyPrices() {
 
 export function load(retry) {
   if (retry && !loaded()) loading = null;
-  return (loading ||= Promise.all([json('data/prices.json'), json('data/holdings.json')]).then(async ([p, hd]) => {
-    prices = p?.tickers ? p : null; holdings = hd?.funds ? hd : null;
+  return (loading ||= Promise.all([json('data/prices.json'), json('data/holdings.json'), json('data/sectors.json')]).then(async ([p, hd, sc]) => {
+    prices = p?.tickers ? p : null; holdings = hd?.funds ? hd : null; sectors = sc?.tickers ? sc : null;
     const n = await applyPrices();
     // Screens drawn before the data arrived: redraw once (a price write already triggers a redraw).
     if (!n && loaded() && location.hash.startsWith('#invest')) window.dispatchEvent(new HashChangeEvent('hashchange'));

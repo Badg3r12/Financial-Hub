@@ -15,6 +15,7 @@ export function openSheet(html, onMount) {
 export function closeSheet() { const d = sheet(); dirty = false; if (d.open) d.close(); }
 // Tapping outside the sheet or pressing Escape asks first when the form has unsaved changes.
 const tryDismiss = () => { if (!dirty || confirm('Discard your changes?')) closeSheet(); };
+export const dismissSheet = () => tryDismiss();
 document.addEventListener('click', (e) => { if (e.target.id === 'sheet') tryDismiss(); });
 document.addEventListener('input', (e) => { if (e.target.closest?.('#sheet-body')) dirty = true; });
 document.addEventListener('change', (e) => { if (e.target.closest?.('#sheet-body')) dirty = true; });
