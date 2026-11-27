@@ -2,16 +2,16 @@
 // Nothing leaves the device. Output is text lines where wide gaps become " | " so the column readers work.
 
 const BASE = new URL('../../vendor/tesseract/', import.meta.url).href;
-let workerP = null;
+let workerP = null, report = null; // report: progress callback of the read in progress
 
 function loadScript(src) {
   return new Promise((res, rej) => { if (window.Tesseract) return res(); const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('Could not load the text reader')); document.head.appendChild(s); });
 }
-async function worker(onProgress) {
+async function worker() {
   if (!workerP) workerP = (async () => {
     await loadScript(BASE + 'tesseract.min.js');
     return window.Tesseract.createWorker('eng', 1, { workerPath: BASE + 'worker.min.js', corePath: BASE, langPath: BASE, gzip: true, workerBlobURL: false,
-      logger: (m) => onProgress?.(m) });
+      logger: (m) => report?.(m) });
   })();
   return workerP;
 }
@@ -36,9 +36,16 @@ function wordsOf(data) {
 }
 
 // Recognize text and rebuild rows from word positions (works for multi-column paystubs and tables).
+// opts.onProgress(fraction 0–1, label) is called while the reader loads and as each page is read.
 export async function ocrLines(file, opts = {}) {
-  const w = await worker(opts.onProgress), canvases = await toCanvases(file, opts), lines = [];
-  for (const c of canvases) {
+  const tell = opts.onProgress || (() => {});
+  report = (m) => { if (!/recogniz/i.test(m.status)) tell(0, 'Loading the text reader (first time only)…'); };
+  const w = await worker(); tell(0, 'Opening the file…');
+  const canvases = await toCanvases(file, opts), lines = [];
+  for (const [k, c] of canvases.entries()) {
+    const n = canvases.length, page = n > 1 ? `page ${k + 1} of ${n}` : 'the page';
+    report = (m) => { if (/recogniz/i.test(m.status)) tell((k + (m.progress || 0)) / n, `Reading ${page}…`); };
+    tell(k / n, `Reading ${page}…`);
     const { data } = await w.recognize(c, {}, { blocks: true, text: true });
     const words = wordsOf(data).filter((x) => x.text?.trim()).map((x) => ({ s: x.text.trim(), x0: x.bbox.x0, x1: x.bbox.x1, y: (x.bbox.y0 + x.bbox.y1) / 2, hgt: x.bbox.y1 - x.bbox.y0 }));
     words.sort((a, b) => a.y - b.y || a.x0 - b.x0);
@@ -50,5 +57,6 @@ export async function ocrLines(file, opts = {}) {
       lines.push(s);
     }
   }
+  report = null; tell(1, 'Checking the numbers…');
   return lines.join('\n');
 }
