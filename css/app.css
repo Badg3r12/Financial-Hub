@@ -158,3 +158,99 @@ a.card.plain:hover { border-color: var(--accent); }
 .seg:has(input:checked) { background: var(--accent); color: var(--accent-ink); }
 .seg input { width: auto; margin: 0; accent-color: var(--accent-ink); }
 .form-error:empty { display: none; }
+
+/* ---- Accent colors (Settings → Accent) ---- */
+:root[data-accent="blue"] { --accent: #2f5fa8; --s1: #2f5fa8; --chip: #e6edf7; }
+:root[data-accent="purple"] { --accent: #6a4bb0; --s1: #6a4bb0; --chip: #eee9f7; }
+:root[data-accent="orange"] { --accent: #b8621b; --s1: #b8621b; --chip: #f6ece2; }
+:root[data-accent="rose"] { --accent: #b0456a; --s1: #b0456a; --chip: #f6e6ec; }
+:root[data-accent="slate"] { --accent: #44505f; --s1: #44505f; --chip: #e8ebee; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"])[data-accent="blue"] { --accent: #7fa8ea; --s1: #7fa8ea; --chip: #1f2836; --accent-ink: #0d1522; }
+  :root:not([data-theme="light"])[data-accent="purple"] { --accent: #b39ced; --s1: #b39ced; --chip: #272236; --accent-ink: #160f24; }
+  :root:not([data-theme="light"])[data-accent="orange"] { --accent: #eba468; --s1: #eba468; --chip: #33281e; --accent-ink: #22140a; }
+  :root:not([data-theme="light"])[data-accent="rose"] { --accent: #ec8fb0; --s1: #ec8fb0; --chip: #35222a; --accent-ink: #250e17; }
+  :root:not([data-theme="light"])[data-accent="slate"] { --accent: #aab6c4; --s1: #aab6c4; --chip: #262c33; --accent-ink: #11161c; }
+}
+:root[data-theme="dark"][data-accent="blue"] { --accent: #7fa8ea; --s1: #7fa8ea; --chip: #1f2836; --accent-ink: #0d1522; }
+:root[data-theme="dark"][data-accent="purple"] { --accent: #b39ced; --s1: #b39ced; --chip: #272236; --accent-ink: #160f24; }
+:root[data-theme="dark"][data-accent="orange"] { --accent: #eba468; --s1: #eba468; --chip: #33281e; --accent-ink: #22140a; }
+:root[data-theme="dark"][data-accent="rose"] { --accent: #ec8fb0; --s1: #ec8fb0; --chip: #35222a; --accent-ink: #250e17; }
+:root[data-theme="dark"][data-accent="slate"] { --accent: #aab6c4; --s1: #aab6c4; --chip: #262c33; --accent-ink: #11161c; }
+
+/* ---- Polish ---- */
+h1 { font-weight: 750; }
+.card { transition: border-color .15s, box-shadow .15s; }
+a.card.plain:hover, .card.tap:hover { box-shadow: 0 2px 4px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.06); }
+button, .btn, .tabs a, .chips button, .seg { transition: background-color .15s, border-color .15s, transform .08s; }
+button:not(:disabled):active, .btn:active, .tabs a:active, li.tap:active, .card.tap:active { transform: scale(.98); }
+button:hover:not(:disabled):not(.link):not(.primary), .btn:hover { background: var(--surface-2); }
+button.primary:hover:not(:disabled) { filter: brightness(1.06); }
+td.num, th.num { text-align: right; }
+table td, table th { font-variant-numeric: tabular-nums; }
+.kpi .big { line-height: 1.15; }
+.kpi .sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.section-title { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 22px 0 10px; }
+.section-title h2 { margin: 0; }
+.pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--surface-2); color: var(--muted); }
+.pill.good { background: color-mix(in srgb, var(--good) 15%, transparent); color: var(--good); }
+.pill.warn { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.pill.bad { background: color-mix(in srgb, var(--bad) 15%, transparent); color: var(--bad); }
+.notice.warn { background: color-mix(in srgb, var(--warn) 14%, var(--surface)); }
+.notice.bad { background: color-mix(in srgb, var(--bad) 12%, var(--surface)); }
+.notice.good { background: color-mix(in srgb, var(--good) 12%, var(--surface)); }
+.alert-list { display: grid; gap: 8px; margin-bottom: 14px; }
+.alert-list a { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; }
+.meter { position: relative; height: 10px; border-radius: 5px; background: var(--surface-2); overflow: visible; }
+.meter > i { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 5px; background: var(--accent); }
+.meter > b { position: absolute; top: -3px; width: 2px; height: 16px; background: var(--text); border-radius: 1px; }
+
+/* ---- Charts ---- */
+.chart-wrap { position: relative; touch-action: pan-y; }
+.chart-tip { position: absolute; top: 0; pointer-events: none; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font-size: 12px; box-shadow: var(--shadow), 0 4px 14px rgba(0,0,0,.12); white-space: nowrap; z-index: 2; }
+.chart-tip i, .chart-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+.chart-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 4px; color: var(--muted); }
+.seg-row { display: inline-flex; background: var(--surface-2); border-radius: 999px; padding: 3px; gap: 2px; }
+.seg-row button { border: 0; background: none; padding: 5px 11px; min-height: 30px; border-radius: 999px; font-size: 13px; color: var(--muted); }
+.seg-row button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.heat td { text-align: center; font-size: 12px; padding: 6px 4px; }
+.heat td:first-child { text-align: left; font-size: 13px; }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal > div { min-height: 64px; border-radius: 8px; background: var(--surface-2); padding: 4px 5px; font-size: 11px; overflow: hidden; }
+.cal > div.out { opacity: .35; }
+.cal > div.today { outline: 2px solid var(--accent); }
+.cal .d { font-weight: 700; font-size: 12px; }
+.cal .ev { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal .hd { background: none; min-height: 0; text-align: center; color: var(--muted); font-weight: 600; }
+@media (max-width: 767px) { .cal > div { min-height: 46px; font-size: 10px; } .cal .ev { display: none; } .cal .dot { display: inline-block; width: 6px; height: 6px; border-radius: 3px; margin-right: 2px; } }
+@media (min-width: 768px) { .cal .dot { display: none; } }
+
+/* ---- Privacy mode: blur amounts ---- */
+:root.private svg.chart text, :root.private .amount-display { filter: blur(6px); }
+.top-actions { position: absolute; top: 18px; right: 24px; display: flex; gap: 6px; z-index: 5; }
+.icon-btn { width: 40px; height: 40px; min-height: 40px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); background: var(--surface); color: var(--muted); }
+.icon-btn svg { width: 20px; height: 20px; }
+#main { position: relative; }
+@media (max-width: 767px) { .top-actions { top: calc(10px + env(safe-area-inset-top)); right: 14px; } }
+
+/* ---- Loading skeleton ---- */
+.skel { display: grid; gap: 14px; }
+.skel i { display: block; height: 96px; border-radius: var(--radius); background: linear-gradient(90deg, var(--surface-2), var(--surface), var(--surface-2)); background-size: 200% 100%; animation: skel 1.2s ease-in-out infinite; }
+.skel i:first-child { height: 34px; width: 40%; }
+@keyframes skel { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .skel i { animation: none; } }
+
+/* ---- Lock screen ---- */
+#lock { position: fixed; inset: 0; z-index: 100; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px; text-align: center; }
+#lock img { width: 72px; height: 72px; border-radius: 18px; }
+
+/* ---- Pull to refresh ---- */
+#ptr { position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 6px); transform: translate(-50%, -60px); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; font-size: 13px; z-index: 60; transition: transform .2s; box-shadow: var(--shadow); }
+#ptr.show { transform: translate(-50%, 0); }
+
+/* ---- Glance ---- */
+.glance .big { font-size: 40px; }
+.glance .card { padding: 20px; }
+/* Keep page headers clear of the privacy button. */
+.top-actions + .row.between, .top-actions + h1, .top-actions + .back-btn + .row.between, .top-actions + .back-btn + h1, .top-actions + .glance > h1, .top-actions + .back-btn + .glance > h1 { padding-right: 52px; }
+.top-actions + .back-btn { margin-right: 52px; }
