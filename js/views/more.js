@@ -208,10 +208,10 @@ function settings() {
     ${!sy.configured ? h`<p class="small muted">Connect your free Firebase project to sync this device with your other devices. Paste the firebaseConfig block from the Firebase console (Project settings → Your apps).</p>
       <textarea id="fb-config" placeholder="const firebaseConfig = { apiKey: ..., projectId: ... }"></textarea><button class="primary" id="fb-save">Connect</button>`
     : sy.email ? h`<p>Signed in as <b>${sy.email}</b>.</p><p class="small ${sy.status === 'error' ? 'bad' : 'muted'}">${sy.status === 'on' ? `Synced${sy.lastSync ? ' at ' + sy.lastSync.toLocaleTimeString() : ''}. Changes made offline upload when you're back online.` : sy.status === 'error' ? 'Sync error. Check your connection and the Firestore rules.' : 'Syncing…'}</p>
-      <div class="row wrap"><button id="fb-out">Sign out</button><button class="danger" id="fb-forget">Disconnect this device</button></div>`
-    : h`<p class="small muted">Sign in with the email and password for your Finance Hub account. Use "Create account" once, on your first device.</p>
+      <div class="row wrap"><button id="fb-out">Sign out</button></div>`
+    : h`<p class="small muted">Sign in with the email and password for your Finance Hub account. Your data then downloads to this device. Use "Create account" only once, on your first device.</p>
       <form class="form" id="fb-login"><input name="email" type="email" autocomplete="username" placeholder="Email" required><input name="password" type="password" autocomplete="current-password" placeholder="Password" required minlength="6">
-      <div class="row wrap"><button class="primary">Sign in</button><button type="button" id="fb-create">Create account</button><button type="button" class="link" id="fb-forget">Use a different project</button></div></form>`}</div>`;
+      <div class="row wrap"><button class="primary">Sign in</button><button type="button" id="fb-create">Create account</button><button type="button" class="link" id="fb-reset">Forgot password</button></div></form>`}</div>`;
   return h`<h1>Settings</h1><div class="grid cols-2">${syncCard}
   <div class="card stack"><h2>Backup</h2><p class="small muted">Your data lives on this device${sy.email ? ' and in your Firebase project' : ''}. Export a backup regularly and keep it in iCloud Drive.</p>
     <div class="row wrap"><button class="primary" id="exp">Export backup</button><label class="btn" style="color:var(--text)">Restore from backup<input type="file" id="imp" accept=".json,application/json" hidden></label></div>
@@ -228,12 +228,26 @@ function settings() {
   <div class="card"><h2>Merchant rules</h2><ul class="list">${S.all('rules').map((r) => h`<li><span class="grow">"${r.pattern}" → ${C.cat(r.catId)?.name || '—'}</span><button class="link" data-delrule="${r.id}">✕</button></li>`)}</ul>${S.all('rules').length ? '' : h`<p class="small muted">Rules are created when you categorize imported rows.</p>`}</div>
   </div>`;
 }
+const AUTH_MESSAGES = {
+  'auth/invalid-credential': 'Email or password is wrong. If Safari filled in an old password, clear it and type the new one. Or choose Forgot password.',
+  'auth/wrong-password': 'Wrong password. Choose Forgot password to set a new one.',
+  'auth/user-not-found': 'No account with that email. Check the spelling, or choose Create account.',
+  'auth/email-already-in-use': 'That email already has an account. Choose Sign in instead (or Forgot password).',
+  'auth/weak-password': 'Use at least 6 characters for the password.',
+  'auth/invalid-email': 'That email address doesn\'t look right.',
+  'auth/too-many-requests': 'Too many tries. Wait about 15 minutes, or choose Forgot password.',
+  'auth/network-request-failed': 'Couldn\'t reach the sync service. Check your connection and try again.',
+};
+const authMessage = (e) => AUTH_MESSAGES[e.code] || (e.code ? `${e.code.replace('auth/', '').replace(/-/g, ' ')}` : e.message);
 function mountSettings(root) {
   root.querySelector('#fb-save')?.addEventListener('click', async () => { try { sync.saveConfig(root.querySelector('#fb-config').value); await sync.start(); location.reload(); } catch (e) { alert(e.message); } });
   root.querySelectorAll('#fb-forget').forEach((b) => b.onclick = async () => { if (!confirm('Disconnect this device from sync? Data stays on this device.')) return; try { await sync.signOutNow(); } catch { /* not signed in */ } sync.forgetConfig(); location.reload(); });
   root.querySelector('#fb-out')?.addEventListener('click', () => sync.signOutNow());
   const login = root.querySelector('#fb-login');
-  const go = async (create) => { const d = formData(login); try { await sync.signIn(d.email.trim(), d.password, create); toast('Signed in'); } catch (e) { alert(e.code ? e.code.replace('auth/', '').replace(/-/g, ' ') : e.message); } };
+  const go = async (create) => { const d = formData(login); try { await sync.signIn(d.email.trim().toLowerCase(), d.password, create); toast('Signed in'); } catch (e) { alert(authMessage(e)); } };
+  root.querySelector('#fb-reset')?.addEventListener('click', async () => {
+    const email = login.email.value.trim().toLowerCase(); if (!email) { alert('Type your email first, then choose Forgot password.'); return; }
+    try { await sync.resetPassword(email); alert(`If ${email} has an account, a reset link is on its way. Check spam too.`); } catch (e) { alert(authMessage(e)); } });
   login?.addEventListener('submit', (e) => { e.preventDefault(); go(false); });
   root.querySelector('#fb-create')?.addEventListener('click', () => { if (login.reportValidity()) go(true); });
   root.querySelector('#exp').onclick = () => {
