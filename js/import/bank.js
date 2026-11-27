@@ -1,6 +1,6 @@
 // Bank and card statement CSVs: Capital One (Debit/Credit columns), Discover (signed Amount, purchases positive),
 // or any bank CSV with date / description / amount columns. Account and card number columns are dropped on read.
-import { parseCSV, parseDate, toCents, SENSITIVE_HEADER } from '../util.js';
+import { parseCSV, parseDate, toCents, daysBetween, SENSITIVE_HEADER } from '../util.js';
 
 export function parseBankCSV(text, { isCard } = {}) {
   const rows = parseCSV(text).filter((r) => r.some((c) => c.trim()));
@@ -35,6 +35,28 @@ export function parseOFX(text) {
       outflow: -(toCents(tag('TRNAMT')) || 0), fitid: tag('FITID'), hint: '' });
   }
   return { layout: 'ofx', rows: out };
+}
+
+// Records that came from alert emails (automation/Code.gs gives them a fid containing "|EMAIL|"), wherever they ended up:
+// still in the Inbox, confirmed, merged into a Quick add, or turned into a transfer or income. A statement row with the same
+// account and amount within a few days is the same purchase (alerts are dated at purchase, statements when it posts).
+// Returns match(acctId, date, outflow) → true once per email record.
+export function emailMatcher({ txns = [], transfers = [], income = [] }, days = 5) {
+  const pool = [
+    ...txns.map((t) => ({ acctId: t.acctId, date: t.postedDate || t.date, out: t.amount, fid: t.fid })),
+    ...transfers.map((t) => ({ acctId: t.acctId, date: t.date, out: t.direction === 'in' ? -t.amount : t.amount, fid: t.fid })),
+    ...income.map((t) => ({ acctId: null, date: t.date, out: -t.amount, fid: t.fid })), // income records don't keep the account
+  ].filter((x) => String(x.fid || '').includes('|EMAIL|'));
+  return (acctId, date, outflow) => {
+    let best = null, gap = days + 1;
+    for (const x of pool) {
+      if (x.used || x.out !== outflow || (x.acctId && x.acctId !== acctId)) continue;
+      const d = Math.abs(daysBetween(x.date, date));
+      if (d < gap) { best = x; gap = d; }
+    }
+    if (best) best.used = true;
+    return !!best;
+  };
 }
 
 // Guess what a statement row is from its description.

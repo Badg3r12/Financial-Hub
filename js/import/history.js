@@ -132,5 +132,9 @@ export function importHistory(budgetWb, stockWb) {
 
 export async function commitHistory(out) {
   for (const [c, docs] of Object.entries(out)) if (docs.length) await S.putMany(c, docs, { silent: true });
-  await S.putMany('settings', [{ id: 'historyImported', value: new Date().toISOString() }]);
+  const now = new Date().toLocaleDateString('en-CA');
+  const set = [{ id: 'historyImported', value: new Date().toISOString() }];
+  // Spending on or before this date comes from the spreadsheet; statement rows up to it are skipped so nothing counts twice.
+  if (!S.setting('historyCutoff', null)) set.push({ id: 'historyCutoff', value: now });
+  await S.putMany('settings', set);
 }

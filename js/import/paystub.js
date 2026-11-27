@@ -6,7 +6,7 @@ export const PAYSTUB_FIELDS = [
   ['payDate', 'Pay date', 'date'], ['periodStart', 'Period start', 'date'], ['periodEnd', 'Period end', 'date'],
   ['gross', 'Gross pay'], ['federal', 'Federal withholding'], ['state', 'State withholding'], ['socialSecurity', 'Social Security'], ['medicare', 'Medicare'],
   ['roth401k', 'Roth 401k (you)'], ['match', 'Employer 401k match'], ['health', 'Health / dental / vision'], ['hsa', 'HSA / FSA'], ['otherDeductions', 'Other deductions'],
-  ['net', 'Net pay'], ['ytdGross', 'Gross year-to-date'], ['ytdRoth401k', 'Roth 401k year-to-date'],
+  ['reimbursed', 'Reimbursed expenses (added to pay)'], ['net', 'Net pay (deposit)'], ['ytdGross', 'Gross year-to-date'], ['ytdRoth401k', 'Roth 401k year-to-date'],
 ];
 
 const LABELS = {
@@ -19,26 +19,35 @@ const LABELS = {
 const AMT = /-?\$?\(?\d{1,3}(,\d{3})*(\.\d{2})\)?|-?\$?\d+\.\d{2}/g;
 const DATE = /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b|\b\d{4}-\d{2}-\d{2}\b/g;
 
-// For each line: find a label; the first amount on the line is "current", the last is often "year-to-date".
+// Labels for amount fields, matched anywhere in a line (paystubs often print two columns of labels side by side).
+const SEG = {
+  gross: /total pay|gross pay|total earnings/i, federal: /federal withholding|federal income tax|fed(eral)? w\/?h|\bfitw\b/i,
+  state: /missouri withholding|state withholding|state income tax|\bmo w\/?h\b|\bsitw\b/i,
+  socialSecurity: /social security(?!\s*-\s*employer)|\boasdi\b/i, medicare: /medicare(?!\s*-\s*employer)/i,
+  roth401k: /401\s*\(?k\)?\s*-?\s*roth|roth\s*401\s*\(?k\)?/i, match: /401\s*\(?k\)?\s*match(ing)?|employer match|safe harbor match/i,
+  health: /medical|dental|vision|health ins/i, hsa: /\bhsa\b|\bfsa\b/i, net: /net pay|net check|take home/i, reimbursed: /reimbursed expenses|reimbursement/i,
+};
+const D = (s) => { const m = s.match(/(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/); return m ? parseDate(`${m[1]}/${m[2]}/${m[3]}`) : null; };
+
+// For each label, read the amounts right after it, up to the next label: [hours] [rate] current year-to-date.
 export function parsePaystub(text) {
-  const out = {}, lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  const take = (key, val) => { if (out[key] == null && val != null) out[key] = val; };
-  lines.forEach((line, i) => {
-    const next = lines[i + 1] || '';
-    for (const [key, res] of Object.entries(LABELS)) {
-      if (!res.some((re) => re.test(line))) continue;
-      const isDate = ['payDate', 'periodStart', 'periodEnd'].includes(key);
-      if (isDate) { const d = (line.match(DATE) || next.match(DATE) || [])[0]; take(key, parseDate(d)); continue; }
-      if (key === 'match' && /roth/i.test(line)) continue;
-      if (key === 'gross' && /ytd|year/i.test(line) && !/current/i.test(line)) continue;
-      const amts = (line.match(AMT) || next.match(AMT) || []).map((a) => Math.abs(toCents(a)));
+  const out = {}, lines = text.split(/\r?\n/).map((l) => l.replace(/[\][(){}]/g, ' ').trim()).filter(Boolean);
+  const take = (k, v) => { if (out[k] == null && v != null && !Number.isNaN(v)) out[k] = v; };
+  for (const line of lines) {
+    const pp = line.match(/PAY PERIOD\s+(\S+)\s+TO\s+(\S+)/i); if (pp) { take('periodStart', D(pp[1])); take('periodEnd', D(pp[2])); }
+    const pd = line.match(/(?:PAY |CHECK )?DATE[:\s|]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/i); if (pd) take('payDate', D(pd[1]));
+    for (const [key, re] of Object.entries(SEG)) {
+      const m = line.match(re); if (!m) continue;
+      if (key === 'match' && /roth/i.test(m[0])) continue;
+      const rest = line.slice(m.index + m[0].length), stop = rest.search(/[A-Za-z]{4,}/);
+      const amts = ((stop < 0 ? rest : rest.slice(0, stop)).match(AMT) || []).map((a) => toCents(a));
       if (!amts.length) continue;
-      // Lines read "label [hours] [rate] current year-to-date": current is second to last when there are two or more amounts.
-      take(key, amts.length > 1 ? amts.at(-2) : amts[0]);
-      if (amts.length > 1 && key === 'gross') take('ytdGross', amts.at(-1));
-      if (amts.length > 1 && key === 'roth401k') take('ytdRoth401k', amts.at(-1));
+      if (key === 'reimbursed') { if (amts.length >= 2) take('reimbursed', Math.abs(amts.at(-2))); take('reimbursedYTD', Math.abs(amts.at(-1))); continue; }
+      const vals = amts.length >= 3 ? amts.slice(-2) : amts; // drop hours/rate columns
+      take(key, Math.abs(vals[0]));
+      if (vals.length > 1) take('ytd' + key[0].toUpperCase() + key.slice(1), Math.abs(vals[1]));
     }
-  });
+  }
   return out;
 }
 
@@ -47,7 +56,7 @@ export function checkPaystub(p, others = []) {
   const issues = [], c = (k) => p[k] || 0;
   if (p.gross != null && p.net != null) {
     const ded = c('federal') + c('state') + c('socialSecurity') + c('medicare') + c('roth401k') + c('health') + c('hsa') + c('otherDeductions');
-    const diff = p.gross - ded - p.net;
+    const diff = p.gross - ded + c('reimbursed') - p.net; // reimbursed expenses are paid on top of net pay
     if (Math.abs(diff) > 1) issues.push(`Gross minus taxes and deductions is ${(diff / 100).toFixed(2)} away from net pay (a figure may be misread or missing, or put it in "Other deductions").`);
   }
   if (p.gross && p.socialSecurity && Math.abs(p.socialSecurity - Math.round(p.gross * 0.062)) > Math.max(100, p.gross * 0.01)) issues.push('Social Security is usually 6.2% of gross pay; check that figure.');

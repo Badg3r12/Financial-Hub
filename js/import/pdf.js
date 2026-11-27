@@ -7,6 +7,20 @@ async function pdfjs() {
   return lib;
 }
 
+// Draw PDF pages to canvases (for text recognition of scanned or scrambled-font PDFs).
+export async function renderPdfPages(file, pages = [1], scale = 3) {
+  const { getDocument } = await pdfjs();
+  const doc = await getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false }).promise, out = [];
+  for (const n of pages) {
+    if (n > doc.numPages) continue;
+    const page = await doc.getPage(n), vp = page.getViewport({ scale }), c = document.createElement('canvas');
+    c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
+    const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise; out.push(c);
+  }
+  return out;
+}
+
 // Group text pieces into lines by vertical position; a wide horizontal gap becomes " | ".
 export async function pdfLines(file) {
   const { getDocument } = await pdfjs();

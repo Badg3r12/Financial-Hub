@@ -36,7 +36,9 @@ export function parseK401(text) {
     const v = parts.slice(ni, ni + 7).map((p) => nums(p)[0] ?? 0);
     if (v.length < 7 || !v.some(Boolean) || /^total/i.test(parts[0])) continue;
     const name = parts.slice(0, ni).filter((p) => !/^(Funds?|Bond|Stock|Blend|Value|Growth|Balanced|Stable|Asset)$/i.test(p));
-    out.funds.push({ name: name[0], category: name[1] || '', begin: v[0], contribution: v[2], earnings: v[4], end: v[6] });
+    // The fund name is the longest label piece (scanned text sometimes puts a stray category word first).
+    const byLen = [...name].sort((a, b) => b.length - a.length);
+    out.funds.push({ name: byLen[0], category: name.find((p) => p !== byLen[0]) || '', begin: v[0], contribution: v[2], earnings: v[4], end: v[6] });
   }
   return out;
 }
