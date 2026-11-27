@@ -60,6 +60,47 @@ After that it runs by itself. If a run fails (a data site changed), GitHub email
 
 The 401(k) has no tickers, so its funds are matched by name in `K401_MAP` at the bottom of `js/calc.js` (Total Stock Market → VTI, Small Cap → VB). The target-date fund holds other funds and is left out of the company breakdown; the screen says so.
 
+## Insights and tools
+
+- **Home** warns when a category is near or over budget and reminds you to back up once a week. Its Insights card links to everything below.
+- **Monthly review** (`#review`): income, spending, savings rate, investments split into money added vs. market change, net-worth change, and over-budget categories.
+- **Plan** (`#plan`): savings rate, net-worth projection with milestones and an "extra a month" slider, Roth IRA contributions against the yearly limit (`ROTH_LIMITS` in `js/insights.js`; add each new year's limit there), and a Roth 401(k) projection. Set your birth year and expected return under **Assumptions**.
+- **Invest tabs**: Performance (your portfolio vs. the same deposits in VTI, VOO, VT, QQQ or SCHD), Dividends, Allocation (target mix, where to put the next deposit, sectors and US vs. international), and Taxes (lots in the brokerage, short vs. long term, loss-harvest candidates with a wash-sale check).
+- **Budget links**: Trends (category-by-month heatmap and year-over-year), Subscriptions (repeating charges, yearly cost, price increases), and Cash flow (calendar of expected paydays and bills, with the projected checking balance).
+- **Transactions**: search by merchant, note, category or amount, plus min/max amount and account filters. Open a transaction and choose **Split…** to divide it across categories.
+- **Goals** show what each goal needs per month to hit its date and what you've actually been putting in.
+- **Data health** (More): missing or stale prices, balances that don't match holdings, old snapshots, uncategorized rows, backup status, and suggested merchant rules.
+- **At a glance** (More): just the big numbers.
+- **Privacy**: the eye button at the top right hides every dollar amount until you tap it again.
+- **Face ID lock** (Settings): asks for Face ID or Touch ID when the app opens and after 5 minutes away. It's a privacy screen for this device and doesn't encrypt anything. If you ever get stuck, clearing this site's data removes the lock, and sync brings your data back.
+- **Look**: accent color under Settings, chart range buttons (1M–All) and tap/hover readouts on charts, pull down to refresh, and swipe a sheet down to close it.
+- **Backups**: **Back up now** (Home) or **Back up…** (Settings) lets you pick iCloud Drive, Google Drive, OneDrive or this device, on any device.
+  - iPhone/iPad: the share sheet opens; choose **Save to Files** and pick the drive. Google Drive and OneDrive show up there once their apps are installed.
+  - Computer: the file is saved to Downloads and the drive's website opens so you can drag it in. On a Mac you can also save straight into the iCloud Drive folder. Apple has no way for websites to upload to iCloud directly.
+  - Optional, for one-click uploads from a computer: add free sign-in IDs under **Settings → Backup → Upload straight to Google Drive or OneDrive** (steps below).
+
+Sector data (`data/sectors.json`) comes from the same Market data action, refreshed with fund holdings each month.
+
+## Optional: direct upload to Google Drive and OneDrive (free, one-time)
+
+These IDs only identify the app to Google and Microsoft; they aren't passwords. You sign in with your own account each time you back up, and the app can only touch files it created. Add both redirect addresses each time: `https://badg3r12.github.io/Financial-Hub/oauth.html` and, for testing on the Mac, `http://localhost:8765/oauth.html`.
+
+**Google Drive**
+1. Go to console.cloud.google.com, sign in, and create a project (e.g. `finance-hub`). No billing needed.
+2. **APIs & Services → Library**: search **Google Drive API** and choose **Enable**.
+3. **APIs & Services → OAuth consent screen**: choose **External**, enter the app name and your email, save. Under **Test users**, add your own Google account. It can stay in testing mode.
+4. **APIs & Services → Credentials → Create credentials → OAuth client ID**: type **Web application**. Under **Authorized JavaScript origins** add `https://badg3r12.github.io` (and `http://localhost:8765`). Under **Authorized redirect URIs** add the two `oauth.html` addresses above. Create.
+5. Copy the client ID (it ends in `.apps.googleusercontent.com`) into Settings → Backup. Backups go into a **Finance Hub backups** folder.
+
+**OneDrive**
+1. Go to portal.azure.com (sign in with your Microsoft account; free) → **App registrations → New registration**.
+2. Name it `Finance Hub`. Supported account types: **Personal Microsoft accounts only** (or "any organizational directory and personal accounts"). Redirect URI: platform **Single-page application**, address `https://badg3r12.github.io/Financial-Hub/oauth.html`. Register.
+3. **Authentication**: add the localhost `oauth.html` address too, and under **Implicit grant and hybrid flows** tick **Access tokens**. Save.
+4. **API permissions**: make sure **Microsoft Graph → Files.ReadWrite.AppFolder** (delegated) is listed; add it if not.
+5. Copy the **Application (client) ID** from Overview into Settings → Backup. Backups go into **Apps → Finance Hub** in your OneDrive.
+
+The setting syncs, so you only enter the IDs once. If your browser blocks the sign-in window, allow pop-ups for the site.
+
 ## Monthly routine
 
 1. **Statements as PDFs:** under Import → Bank or card statement, choose the monthly PDF. The app recognizes the JMCU member statement (Savings and Checking), the Discover it card statement and the Discover savings statement, and puts each row in the right account. Ending balances become net-worth snapshots. CSV and OFX exports also work; for those, pick the account first.
@@ -94,6 +135,10 @@ Download the paystub PDFs from Ajera and choose them under **Import → Paystubs
 - `js/sync.js`: sign-in and syncing with your Firebase project.
 - `js/store.js`: local database (IndexedDB). Every save goes through it.
 - `js/calc.js`: all totals (budget, holdings, net worth, goals, fund overlap and look-through).
+- `js/insights.js`: monthly review, projections, benchmark, recurring charges, alerts, dividends, allocation, taxes, cash flow, data health.
+- `js/views/plan.js`, `js/views/portfolio.js`: the insight screens and the extra Invest tabs.
+- `js/backup.js`, `oauth.html`: the backup chooser and Google Drive / OneDrive uploads (`oauth.html` receives the sign-in and closes).
+- `js/lock.js`, `js/gestures.js`: Face ID lock, touch gestures.
 - `js/market.js`: loads `data/prices.json` and `data/holdings.json` and updates stored prices when they're newer.
 - `tools/market_data.py`, `.github/workflows/market-data.yml`: the free market-data job (Python standard library only).
 - `js/views/`: one file per screen.
