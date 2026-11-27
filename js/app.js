@@ -37,7 +37,7 @@ async function start() {
   await S.open();
   for (const m of MODULES) Object.assign(VIEWS, (await import(`./views/${m}.js`)).views);
   const sync = await import('./sync.js');
-  if (!S.all('accounts').length && !sync.getConfig()) (await import('./defaults.js')).install();
+  if (!S.all('accounts').length && !Object.keys(localStorage).some((k) => k.startsWith('synced-'))) (await import('./defaults.js')).install();
   sync.onStatus(() => { if (location.hash.startsWith('#settings')) render(); });
   sync.start().catch((e) => console.error(e));
   document.getElementById('fab').onclick = () => openQuickAdd();

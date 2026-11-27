@@ -10,9 +10,16 @@ const setStatus = (s) => { status = s; listeners.forEach((f) => f()); };
 export const onStatus = (f) => { listeners.add(f); return () => listeners.delete(f); };
 export const syncState = () => ({ status, email: user?.email || null, lastSync, configured: !!getConfig() });
 
-export function getConfig() { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } }
+// Your Firebase project, built in so no device needs it pasted. This block only names the project; it is not a password.
+// Sign-in and the Firestore rules (only your own account can read or write users/<your id>) are what protect the data.
+const BUILT_IN = { apiKey: 'AIzaSyAA0Ri1Ub3zuR4aDTHk31htFbo8j9YHAGI', authDomain: 'finance-hub-52289.firebaseapp.com', projectId: 'finance-hub-52289', appId: '1:87312358002:web:2160b4de401204d21ac0eb' };
+export function getConfig() {
+  try { const c = JSON.parse(localStorage.getItem(KEY)); if (c && /^AIza[\w-]{30,}$/.test(c.apiKey) && c.projectId) return c; } catch { /* ignore a bad saved config */ }
+  return BUILT_IN;
+}
 // Accepts the snippet Firebase shows (const firebaseConfig = { apiKey: "...", ... }) or plain JSON.
 export function saveConfig(text) {
+  text = text.replace(/[\u201c\u201d\u2018\u2019]/g, '"'); // curly quotes from Notes or Messages
   const pick = (k) => (text.match(new RegExp(`["']?${k}["']?\\s*:\\s*["']([^"']+)["']`)) || [])[1];
   const cfg = { apiKey: pick('apiKey'), authDomain: pick('authDomain'), projectId: pick('projectId'), appId: pick('appId') };
   if (!cfg.apiKey || !cfg.projectId) throw new Error('That doesn\'t look like a Firebase config. Copy the whole firebaseConfig block.');
@@ -41,6 +48,7 @@ export async function signIn(email, password, create) {
   const fn = create ? fb.a.createUserWithEmailAndPassword : fb.a.signInWithEmailAndPassword;
   await fn(auth, email, password);
 }
+export async function resetPassword(email) { await load(); await fb.a.sendPasswordResetEmail(auth, email); }
 export async function signOutNow() { await load(); await fb.a.signOut(auth); }
 
 const col = (c) => fb.f.collection(fs, 'users', user.uid, c);
@@ -60,12 +68,12 @@ async function connect() {
   const flag = 'synced-' + user.uid;
   if (!localStorage.getItem(flag)) {
     const remoteHasData = !(await fb.f.getDocs(fb.f.query(col('accounts'), fb.f.limit(1)))).empty;
+    if (!remoteHasData && !S.all('accounts').length) (await import('./defaults.js')).install(); // brand-new everywhere
     const localIsFresh = !S.all('txns').length && !S.all('lots').length && !S.all('snapshots').length;
     if (remoteHasData && localIsFresh) await S.clearAll(); // new device: take the cloud copy, drop the starter setup
     else for (const c of S.COLLECTIONS) { const docs = await S.rawAll(c); if (docs.length) await upload(c, docs); }
     localStorage.setItem(flag, '1');
   }
-  setTimeout(async () => { if (user && !S.all('accounts').length) (await import('./defaults.js')).install(); }, 4000); // brand-new everywhere
   S.setSyncHook((c, docs) => { if (user) upload(c, docs).catch((e) => { console.error(e); setStatus('error'); }); });
   for (const c of S.COLLECTIONS) {
     unsubs.push(fb.f.onSnapshot(col(c), { includeMetadataChanges: false }, async (snap) => {
