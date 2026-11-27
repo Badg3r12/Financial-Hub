@@ -34,7 +34,9 @@ async function confirmRow(t, { catId, kind }) {
 function render() {
   const rows = S.all('txns').filter((t) => t.status === 'review').sort((a, b) => a.date.localeCompare(b.date));
   const cats = C.activeCats();
-  return h`<div class="row between wrap"><h1>Inbox</h1>${rows.length ? h`<button class="primary" id="ib-all">Confirm all ready</button>` : ''}</div>
+  const files = [...new Set(rows.map((t) => t.importFile).filter(Boolean))];
+  return h`<div class="row between wrap"><h1>Inbox</h1>${rows.length ? h`<div class="row wrap"><button class="danger" id="ib-discard">Discard all</button><button class="primary" id="ib-all">Confirm all ready</button></div>` : ''}</div>
+  ${files.length > 1 ? h`<div class="row wrap small" style="margin-bottom:10px">Discard one file: ${files.map((f) => h`<button class="link" data-discard-file="${f}">${f} ✕</button>`)}</div>` : ''}
   <p class="muted">Imported rows wait here. Matches with your Quick add entries merge automatically when confirmed. Choosing a category also saves a rule for that merchant.</p>
   <div class="card">${rows.length ? h`<ul class="list">${rows.map((t) => {
     const m = findMatch(t), sug = t.catId || suggestCat(t.merchant, t.hint), kind = t.kind === 'spend' && ruleFor(t.merchant)?.work ? 'work' : t.kind;
@@ -53,6 +55,13 @@ function mount(root) {
     li.querySelector('[data-kind]').onchange = sync; sync();
     li.querySelector('[data-ok]').onclick = async () => { try { await confirmRow(S.get('txns', li.dataset.row), read(li)); } catch (e) { toast(e.message); } };
   });
+  // Discarding removes rows without remembering them, so the same file can be imported again later.
+  const discard = async (pred, what) => {
+    const ids = S.all('txns').filter((t) => t.status === 'review' && pred(t)).map((t) => t.id);
+    if (ids.length && confirm(`Remove ${ids.length} unconfirmed row${ids.length > 1 ? 's' : ''} ${what}? Nothing you've confirmed is touched, and you can import the file again later.`)) { await S.removeMany('txns', ids); toast(`Removed ${ids.length}`); }
+  };
+  root.querySelector('#ib-discard')?.addEventListener('click', () => discard(() => true, 'from the Inbox'));
+  root.querySelectorAll('[data-discard-file]').forEach((b) => b.onclick = () => discard((t) => t.importFile === b.dataset.discardFile, `from ${b.dataset.discardFile}`));
   root.querySelector('#ib-all')?.addEventListener('click', async () => {
     let n = 0;
     for (const li of root.querySelectorAll('[data-row]')) {

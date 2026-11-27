@@ -5,7 +5,7 @@ import * as C from '../calc.js';
 import { options, toast } from '../ui.js';
 import { readXlsx } from '../import/xlsx.js';
 import { importHistory, commitHistory } from '../import/history.js';
-import { parseBankCSV, parseOFX, classify } from '../import/bank.js';
+import { parseBankCSV, parseOFX, classify, emailMatcher } from '../import/bank.js';
 import { parseVanguard, vanguardLots, isSettlement } from '../import/vanguard.js';
 
 let pending = null; // preview waiting for confirmation
@@ -70,19 +70,22 @@ async function statement(file, acctId) {
     groups = [{ acctId, rows: parsed.rows }]; label = `format: ${parsed.layout}`;
   }
   const known = new Set([...S.all('txns'), ...S.all('income'), ...S.all('transfers'), ...S.all('imports')].map((x) => x.fid).filter(Boolean));
-  const fresh = []; let total = 0;
+  const fromEmail = emailMatcher({ txns: S.all('txns'), transfers: S.all('transfers'), income: S.all('income') });
+  const fresh = [], cutoff = S.setting('historyCutoff', null); let total = 0, early = 0, emailed = 0;
   for (const g of groups) {
     const isCard = !!C.acct(g.acctId).isLiability, seen = {};
     for (const r of g.rows) {
       total++;
+      if (cutoff && r.date <= cutoff) { early++; continue; } // already counted in the spreadsheet history
       const base = r.fitid ? fid(g.acctId, r.fitid) : fid(g.acctId, r.date, r.outflow, r.desc);
       const k = base + '#' + (seen[base] = (seen[base] || 0) + 1);
       if (known.has(k)) continue;
-      fresh.push({ id: 'st-' + crypto.randomUUID(), date: r.date, amount: r.outflow, merchant: r.desc, hint: r.hint, acctId: g.acctId, payer: 'me', origin: 'statement', status: 'review', kind: classify(r, isCard), fid: k });
+      if (fromEmail(g.acctId, r.date, r.outflow)) { emailed++; continue; } // already in from an alert email
+      fresh.push({ id: 'st-' + crypto.randomUUID(), date: r.date, amount: r.outflow, merchant: r.desc, hint: r.hint, acctId: g.acctId, payer: 'me', origin: 'statement', status: 'review', kind: classify(r, isCard), fid: k, importFile: file.name });
     }
   }
   const dates = groups.flatMap((g) => g.rows.map((r) => r.date)).sort();
-  showPreview(h`<h2>${file.name}</h2><p>${label}. ${total} rows${dates[0] ? ` (${shortDate(dates[0])} – ${shortDate(dates.at(-1))})` : ''}: <b>${fresh.length} new</b>, ${total - fresh.length} already imported.</p>
+  showPreview(h`<h2>${file.name}</h2><p>${label}. ${total} rows${dates[0] ? ` (${shortDate(dates[0])} – ${shortDate(dates.at(-1))})` : ''}: <b>${fresh.length} new</b>, ${total - fresh.length - early - emailed} already imported${emailed ? `, ${emailed} already in from alert emails` : ''}${early ? h`, <b>${early} skipped</b> because they're on or before ${shortDate(cutoff)}, which your spreadsheet history already covers` : ''}.</p>
     ${groups.length > 1 ? h`<p class="small">${groups.map((g) => `${C.acct(g.acctId).name}: ${g.rows.length}`).join(' · ')}</p>` : ''}
     ${snaps.length ? h`<p class="small">Ending balances saved as snapshots: ${snaps.map((s) => `${C.acct(s.acctId).name} ${money(s.balance)} on ${shortDate(s.date)}`).join(' · ')}</p>` : ''}
     <p class="small muted">${fresh.filter((x) => x.kind === 'transfer').length} look like transfers or card payments, ${fresh.filter((x) => x.kind === 'income').length} like income. You can change any of them in the Inbox.</p>`,

@@ -68,7 +68,10 @@ function paystubs() {
   const list = S.all('paystubs').sort((a, b) => b.payDate.localeCompare(a.payDate)), y = today().slice(0, 4);
   const ytd = list.filter((p) => p.payDate.startsWith(y)), s = (k) => sum(ytd, (p) => p[k] || 0);
   const taxes = s('federal') + s('state') + s('socialSecurity') + s('medicare');
-  return h`<div class="row between wrap"><h1>Paystubs &amp; 401k</h1><button class="primary" id="ps-add">Add paystub</button></div>
+  return h`<div class="row between wrap"><h1>Paystubs &amp; 401k</h1><div class="row wrap"><button id="ps-add">Type one in</button>
+    <label class="btn btn-primary">Add paystubs<input type="file" id="ps-files" accept="image/*,.pdf,application/pdf" multiple hidden></label></div></div>
+  <p class="small muted">Choose paystub screenshots or PDFs (several at once is fine). They're read on this device. Stubs that pass the math checks are saved automatically; any that don't open for you to fix.</p>
+  <div id="ocr-status"></div>
   <div class="grid cols-3" style="margin-bottom:14px">
     <div class="card"><h3>Gross ${y}</h3><div class="big num">${money0(s('gross'))}</div><div class="small muted">Net ${money0(s('net'))}</div></div>
     <div class="card"><h3>Taxes ${y}</h3><div class="big num">${money0(taxes)}</div><div class="small muted">${s('gross') ? ((taxes / s('gross')) * 100).toFixed(1) + '% of gross' : ''}</div></div>
@@ -80,7 +83,8 @@ function paystubs() {
 
 function k401Section() {
   const k = C.k401(), last = k.last;
-  return h`<div class="row between wrap" style="margin-top:22px"><h2 style="margin:0">Roth 401(k) · Ekon Benefits</h2><button id="k-add">Add quarterly statement</button></div>
+  return h`<div class="row between wrap" style="margin-top:22px"><h2 style="margin:0">Roth 401(k) · Ekon Benefits</h2><div class="row wrap"><button id="k-add">Type one in</button>
+    <label class="btn btn-primary">Add statements<input type="file" id="k-files" accept=".pdf,application/pdf,image/*" multiple hidden></label></div></div>
   <div class="grid cols-3" style="margin:12px 0">
     <div class="card"><h3>Value${last ? ' · ' + shortDate(k.asOf) : ''}</h3><div class="big num">${money0(k.value)}</div><div class="small muted">From the latest statement</div></div>
     <div class="card"><h3>Put in</h3><div class="big num">${money0(k.employee + k.match)}</div><div class="small muted">${money0(k.employee)} you · ${money0(k.match)} employer match</div></div>
@@ -143,13 +147,53 @@ function paystubForm(p = {}) {
       if (!doc.payDate || doc.gross == null || doc.net == null) return toast('Pay date, gross and net are required');
       const problems = checkPaystub(doc, S.all('paystubs').filter((x) => x.id !== p.id));
       if (problems.length && !confirm('These checks failed:\n\n' + problems.join('\n') + '\n\nSave anyway?')) return;
-      doc.id ||= uid(); await S.put('paystubs', doc);
-      if (d.addIncome) await S.put('income', { id: 'pay-' + doc.id, date: doc.payDate, amount: doc.net, source: 'paycheck', paystubId: doc.id });
+      await savePaystub(doc, d.addIncome);
       closeSheet(); toast('Paystub saved');
     };
   });
 }
+// Paycheck income = net minus any reimbursement; the reimbursement is recorded as its own income.
+async function savePaystub(doc, addIncome = true) {
+  doc.id ||= 'ps-' + doc.payDate + '-' + (doc.net || 0); await S.put('paystubs', doc);
+  if (!addIncome) return;
+  await S.put('income', { id: 'pay-' + doc.id, date: doc.payDate, amount: doc.net - (doc.reimbursed || 0), source: 'paycheck', paystubId: doc.id });
+  if (doc.reimbursed) await S.put('income', { id: 'reimb-' + doc.id, date: doc.payDate, amount: doc.reimbursed, source: 'reimbursement', paystubId: doc.id, note: 'Work expenses paid back' });
+}
+async function saveK401(doc) {
+  doc.id = doc.periodEnd; await S.put('k401', doc);
+  const acct = S.all('accounts').find((a) => a.type === 'Roth 401k');
+  if (acct) await S.put('snapshots', { id: `${doc.periodEnd}-${acct.id}`, date: doc.periodEnd, acctId: acct.id, balance: doc.end, source: '401k statement' });
+}
+
+// Read files on-device, save the ones whose numbers check out, open the rest for review.
+async function readFiles(files, kind, root) {
+  const status = root.querySelector('#ocr-status') || document.createElement('div');
+  const say = (t) => { status.innerHTML = ''; const p = document.createElement('p'); p.className = 'notice'; p.textContent = t; status.append(p); };
+  const { ocrLines } = await import('../import/ocr.js');
+  const P = await import('../import/paystub.js'), K = await import('../import/k401.js');
+  let saved = 0; const review = [], dupes = [];
+  for (const [i, f] of [...files].entries()) {
+    say(`Reading ${f.name} (${i + 1} of ${files.length})… the first file takes longer while the reader loads.`);
+    try {
+      const text = await ocrLines(f, { pages: kind === 'paystub' ? [1] : [1, 2] });
+      if (kind === 'paystub') {
+        const p = P.parsePaystub(text), others = S.all('paystubs');
+        if (p.payDate && others.some((o) => o.payDate === p.payDate && o.net === p.net)) { dupes.push(f.name); continue; }
+        if (p.payDate && p.gross != null && p.net != null && !P.checkPaystub(p, others).length) { await savePaystub(p); saved++; } else review.push(p);
+      } else {
+        const k = K.parseK401(text);
+        if (k.periodEnd && k.end != null && !K.checkK401(k).length) { await saveK401(k); saved++; } else review.push(k);
+      }
+    } catch (e) { console.error(e); review.push({}); }
+  }
+  const done = `${saved} saved${dupes.length ? `, ${dupes.length} already in the app` : ''}${review.length ? `, ${review.length} need a look` : ''}.`;
+  say(done); toast(done);
+  for (const r of review) { if (kind === 'paystub') paystubForm(r); else k401Form(r); await new Promise((res) => document.getElementById('sheet').addEventListener('close', res, { once: true })); }
+}
+
 function mountPaystubs(root) {
+  root.querySelector('#ps-files').onchange = (e) => e.target.files.length && readFiles(e.target.files, 'paystub', root);
+  root.querySelector('#k-files').onchange = (e) => e.target.files.length && readFiles(e.target.files, 'k401', root);
   root.querySelector('#ps-add').onclick = () => paystubForm();
   root.querySelectorAll('[data-ps]').forEach((el) => el.onclick = () => paystubForm(S.get('paystubs', el.dataset.ps)));
   root.querySelector('#k-add').onclick = () => k401Form();
@@ -174,6 +218,8 @@ function settings() {
     <button class="danger" id="wipe">Erase all data on this device</button></div>
   <div class="card stack"><h2>Preferences</h2>
     <label>Default account for Quick add<select id="pref-acct">${options(accts.filter((a) => !a.isInvestment).map((a) => [a.id, a.name]), prefs.defaultAccount)}</select></label>
+    <label>Spreadsheet history covers spending through<input type="date" id="pref-cutoff" value="${S.setting('historyCutoff', '') || ''}"></label>
+    <p class="small muted" style="margin-top:-6px">Statement rows on or before this date are skipped, because the spreadsheet already counted them. After it, the app is the record.</p>
     <label>Oil change interval (miles)<input id="pref-oil" inputmode="numeric" value="${prefs.oilInterval || 5000}"></label>
     <label>Theme<select id="pref-theme">${options([['', 'Follow device'], ['light', 'Light'], ['dark', 'Dark']], localStorage.getItem('theme') || '')}</select></label></div>
   <div class="card"><div class="row between"><h2>Categories</h2><button class="link" id="cat-new">Add</button></div><ul class="list">${cats.map((c) => h`<li class="tap" data-catedit="${c.id}"><span class="grow">${c.name}</span><span class="small muted">${c.archived ? 'hidden' : c.group || ''}${c.countsAsSpending === false ? ' · not spending' : ''}</span></li>`)}</ul></div>
@@ -199,6 +245,7 @@ function mountSettings(root) {
   root.querySelector('#wipe').onclick = async () => { if (confirm('Erase all Finance Hub data on this device? Export a backup first.') && confirm('Really erase everything?')) { await S.clearAll(); location.reload(); } };
   const prefs = S.setting('prefs');
   root.querySelector('#pref-acct').onchange = (e) => S.saveSetting('prefs', { ...prefs, defaultAccount: e.target.value });
+  root.querySelector('#pref-cutoff').onchange = (e) => S.saveSetting('historyCutoff', e.target.value || null);
   root.querySelector('#pref-oil').onchange = (e) => S.saveSetting('prefs', { ...prefs, oilInterval: parseInt(e.target.value) || 5000 });
   root.querySelector('#pref-theme').onchange = (e) => { const v = e.target.value; v ? localStorage.setItem('theme', v) : localStorage.removeItem('theme'); applyTheme(); };
   const catForm = (c = { name: '', group: 'Lifestyle', countsAsSpending: true, archived: false }) => openSheet(h`<h2>${c.id ? c.name : 'New category'}</h2><form class="form" id="kf">
