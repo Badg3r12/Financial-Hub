@@ -60,6 +60,8 @@ function render() {
   main.querySelector('#privacy-btn').onclick = () => { try { localStorage.setItem('privacy', isPrivate() ? '0' : '1'); } catch { /* private browsing */ } applyPrivacy(); render(); };
   v.mount?.(main, ...args);
   decorateTaps(main);
+  // On phones the tab row scrolls sideways: bring the current tab into view.
+  main.querySelectorAll('.tabs').forEach((t) => { const on = t.querySelector('.on'); if (on && t.scrollWidth > t.clientWidth) t.scrollLeft = on.offsetLeft - (t.clientWidth - on.offsetWidth) / 2; });
   if (location.hash !== lastKey) main.focus({ preventScroll: true });
   window.scrollTo(0, y); lastKey = location.hash;
 }
