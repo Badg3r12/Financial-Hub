@@ -6,7 +6,7 @@ export const ACCOUNTS = [
   ['JMCU Checking', 'checking', 'Joplin Metro CU'], ['JMCU Savings', 'savings', 'Joplin Metro CU'],
   ['Discover Savings', 'savings', 'Discover'], ['Discover CD', 'CD', 'Discover'],
   ['Discover it card', 'credit card', 'Capital One', { isLiability: true }],
-  ['Roth IRA', 'Roth IRA', 'Vanguard', { isInvestment: true }], ['Roth 401k', 'Roth 401k', 'Vanguard', { isInvestment: true }],
+  ['Roth IRA', 'Roth IRA', 'Vanguard', { isInvestment: true }], ['Roth 401k', 'Roth 401k', 'Ekon Benefits', { isInvestment: true }],
   ['Vanguard Brokerage', 'brokerage', 'Vanguard', { isInvestment: true }], ['Vanguard Cash Plus', 'cash', 'Vanguard'],
   ['Venmo', 'Venmo', 'Venmo'], ['Cash', 'cash', ''],
 ];

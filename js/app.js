@@ -38,6 +38,8 @@ async function start() {
   for (const m of MODULES) Object.assign(VIEWS, (await import(`./views/${m}.js`)).views);
   const sync = await import('./sync.js');
   if (!S.all('accounts').length && !Object.keys(localStorage).some((k) => k.startsWith('synced-'))) (await import('./defaults.js')).install();
+  // The Roth 401(k) is with Ekon Benefits; early versions labeled it Vanguard.
+  setTimeout(() => { for (const a of S.all('accounts')) if (a.type === 'Roth 401k' && a.institution === 'Vanguard') S.put('accounts', { ...a, institution: 'Ekon Benefits' }); }, 5000);
   sync.onStatus(() => { if (location.hash.startsWith('#settings')) render(); });
   sync.start().catch((e) => console.error(e));
   document.getElementById('fab').onclick = () => openQuickAdd();
