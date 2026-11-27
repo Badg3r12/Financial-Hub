@@ -1,5 +1,5 @@
 // Offline support: cache the app files so it opens without a connection. Data lives in IndexedDB, not here.
-const CACHE = 'finance-hub-v14';
+const CACHE = 'finance-hub-v15';
 const FILES = ['./', 'index.html', 'css/app.css', 'manifest.webmanifest', 'icon.svg', 'icon-180.png',
   'js/app.js', 'js/util.js', 'js/store.js', 'js/calc.js', 'js/ui.js', 'js/charts.js', 'js/defaults.js',
   'js/views/home.js', 'js/views/budget.js', 'js/views/invest.js', 'js/views/goals.js', 'js/views/more.js', 'js/views/inbox.js', 'js/views/import.js', 'js/views/quickadd.js',
