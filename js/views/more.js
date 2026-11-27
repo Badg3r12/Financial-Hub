@@ -2,7 +2,7 @@ import * as S from '../store.js';
 import { h, raw, money, money0, signed, today, shortDate, toCents, sum, uid } from '../util.js';
 import * as C from '../calc.js';
 import { line } from '../charts.js';
-import { openSheet, closeSheet, toast, options, formData } from '../ui.js';
+import { openSheet, closeSheet, toast, options, formData, progress, busy } from '../ui.js';
 import { parsePaystub, checkPaystub, PAYSTUB_FIELDS } from '../import/paystub.js';
 import * as sync from '../sync.js';
 
@@ -71,7 +71,6 @@ function paystubs() {
   return h`<div class="row between wrap"><h1>Paystubs &amp; 401k</h1><div class="row wrap"><button id="ps-add">Type one in</button>
     <label class="btn btn-primary">Add paystubs<input type="file" id="ps-files" accept=".pdf,.png,.jpg,.jpeg,.heic" multiple hidden></label></div></div>
   <p class="small muted">Choose the paystub PDFs from Ajera or screenshots, and the quarterly 401(k) PDFs from Ekon Benefits (several at once is fine). They're read on this device; nothing is typed by hand. Files that pass the math checks are saved automatically; any that don't open for you to check.</p>
-  <div id="ocr-status"></div>
   <div class="grid cols-3" style="margin-bottom:14px">
     <div class="card"><h3>Gross ${y}</h3><div class="big num">${money0(s('gross'))}</div><div class="small muted">Net ${money0(s('net'))}</div></div>
     <div class="card"><h3>Taxes ${y}</h3><div class="big num">${money0(taxes)}</div><div class="small muted">${s('gross') ? ((taxes / s('gross')) * 100).toFixed(1) + '% of gross' : ''}</div></div>
@@ -167,21 +166,21 @@ async function saveK401(doc) {
 
 // Read files on-device, save the ones whose numbers check out, open the rest for review.
 // kind: 'paystub', 'k401', or 'auto' (decide per file from what the text reader finds).
-export async function readFiles(files, kind, root) {
-  let last = '';
-  const say = (t) => { last = t; const status = document.querySelector('#ocr-status'); if (!status) return; status.innerHTML = ''; const p = document.createElement('p'); p.className = 'notice'; p.textContent = t; status.append(p); };
-  const keep = S.onChange(() => setTimeout(() => last && say(last), 60)); // the screen redraws as files save; put the message back
+export async function readFiles(files, kind) {
+  files = [...files]; const n = files.length, noun = kind === 'paystub' ? 'paystub' : kind === 'k401' ? '401(k) statement' : 'file';
+  const pr = progress(`Reading ${n} ${noun}${n > 1 ? 's' : ''}`);
   const { ocrLines } = await import('../import/ocr.js');
   const P = await import('../import/paystub.js'), K = await import('../import/k401.js');
   let saved = 0; const review = [], dupes = [];
-  for (const [i, f] of [...files].entries()) {
-    say(`Reading ${f.name} (${i + 1} of ${files.length})… the first file takes longer while the reader loads.`);
+  for (const [i, f] of files.entries()) {
+    const head = n > 1 ? `File ${i + 1} of ${n}: ` : '';
+    pr.set(i / n, `${head}${f.name}`);
     try {
-      const text = await ocrLines(f, { pages: kind === 'paystub' ? [1] : [1, 2] });
+      const text = await ocrLines(f, { pages: kind === 'paystub' ? [1] : [1, 2], onProgress: (frac, what) => pr.set((i + frac) / n, `${head}${what}`) });
       let as = kind;
       if (as === 'auto') {
         const k = K.parseK401(text), p = P.parsePaystub(text);
-        as = k.periodEnd && k.end != null ? 'k401' : p.payDate && p.net != null ? 'paystub' : /401\s*\(?k|ekon|savings spectrum|vested/i.test(text.join('\n')) ? 'k401' : 'paystub';
+        as = k.periodEnd && k.end != null ? 'k401' : p.payDate && p.net != null ? 'paystub' : /401\s*\(?k|ekon|savings spectrum|vested/i.test(String(text)) ? 'k401' : 'paystub';
       }
       if (as === 'paystub') {
         const p = P.parsePaystub(text), others = S.all('paystubs');
@@ -194,13 +193,13 @@ export async function readFiles(files, kind, root) {
     } catch (e) { console.error(e); review.push([kind === 'k401' ? 'k401' : 'paystub', {}]); }
   }
   const done = `${saved} saved${dupes.length ? `, ${dupes.length} already in the app` : ''}${review.length ? `, ${review.length} need a look` : ''}.`;
-  say(done); toast(done); setTimeout(() => keep?.(), 3000);
+  if (saved || dupes.length || !review.length) pr.done(done); else pr.fail(done);
   for (const [as, r] of review) { if (as === 'paystub') paystubForm(r); else k401Form(r); await new Promise((res) => document.getElementById('sheet').addEventListener('close', res, { once: true })); }
 }
 
 function mountPaystubs(root) {
-  root.querySelector('#ps-files').onchange = (e) => e.target.files.length && readFiles(e.target.files, 'paystub', root);
-  root.querySelector('#k-files').onchange = (e) => e.target.files.length && readFiles(e.target.files, 'k401', root);
+  root.querySelector('#ps-files').onchange = (e) => { if (e.target.files.length) readFiles(e.target.files, 'paystub'); e.target.value = ''; };
+  root.querySelector('#k-files').onchange = (e) => { if (e.target.files.length) readFiles(e.target.files, 'k401'); e.target.value = ''; };
   root.querySelector('#ps-add').onclick = () => paystubForm();
   root.querySelectorAll('[data-ps]').forEach((el) => el.onclick = () => paystubForm(S.get('paystubs', el.dataset.ps)));
   root.querySelector('#k-add').onclick = () => k401Form();
@@ -262,7 +261,7 @@ function mountSettings(root) {
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `finance-hub-backup-${today()}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
   root.querySelector('#imp').onchange = async (e) => { const f = e.target.files[0]; if (!f) return; if (!confirm('Replace all data on this device with this backup?')) return;
-    try { await S.importAll(JSON.parse(await f.text())); toast('Backup restored'); } catch (err) { alert(err.message); } };
+    try { await busy('Restoring backup', async () => S.importAll(JSON.parse(await f.text())), 'Backup restored'); } catch (err) { alert(err.message); } };
   root.querySelector('#wipe').onclick = async () => { if (confirm('Erase all Finance Hub data on this device? Export a backup first.') && confirm('Really erase everything?')) { await S.clearAll(); location.reload(); } };
   const prefs = S.setting('prefs');
   root.querySelector('#pref-acct').onchange = (e) => S.saveSetting('prefs', { ...prefs, defaultAccount: e.target.value });

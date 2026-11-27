@@ -2,7 +2,7 @@
 import * as S from '../store.js';
 import { h, raw, money, fid, today, shortDate } from '../util.js';
 import * as C from '../calc.js';
-import { options, toast } from '../ui.js';
+import { options, toast, busy } from '../ui.js';
 import { readXlsx } from '../import/xlsx.js';
 import { importHistory, commitHistory } from '../import/history.js';
 import { parseBankCSV, parseOFX, classify, emailMatcher } from '../import/bank.js';
@@ -41,7 +41,7 @@ function showPreview(html, onCommit, label = 'Import') {
   const el = document.getElementById('preview');
   el.innerHTML = h`<div class="card stack">${html}<div class="row"><button class="primary" id="pv-go">${label}</button><button id="pv-cancel">Cancel</button></div></div>`.__raw;
   el.querySelector('#pv-cancel').onclick = () => { el.innerHTML = ''; pending = null; };
-  el.querySelector('#pv-go').onclick = async () => { el.querySelector('#pv-go').disabled = true; try { await onCommit(); el.innerHTML = ''; } catch (e) { alert(e.message); el.querySelector('#pv-go').disabled = false; } };
+  el.querySelector('#pv-go').onclick = async () => { el.querySelector('#pv-go').disabled = true; try { await busy('Saving', onCommit, 'Saved'); el.innerHTML = ''; } catch (e) { alert(e.message); el.querySelector('#pv-go').disabled = false; } };
   el.scrollIntoView({ behavior: 'smooth' });
 }
 
@@ -51,7 +51,7 @@ const byName = (n) => S.all('accounts').find((a) => a.name === n);
 async function toPaystubs(files) {
   location.hash = '#paystubs';
   await new Promise((r) => setTimeout(r, 150));
-  (await import('./more.js')).readFiles(files, 'auto', document.getElementById('main'));
+  (await import('./more.js')).readFiles(files, 'auto');
 }
 
 // PDF statements pick their own accounts: JMCU (savings + checking), the Discover it card, Discover savings.
@@ -75,7 +75,7 @@ async function statement(file, acctId) {
   let groups, snaps = [], label;
   if (/\.pdf$/i.test(file.name)) {
     const r = await readPdfStatement(file);
-    if (!r) return toPaystubs([file]); // the paystub/401(k) reader says so if it can't read it either
+    if (!r) { toPaystubs([file]); return 'handed-off'; } // the paystub/401(k) reader shows its own progress
     ({ groups, snaps, label } = r);
   }
   else {
@@ -156,9 +156,14 @@ async function history(root) {
 }
 
 function mount(root) {
-  root.querySelector('#st-file').onchange = (e) => e.target.files[0] && statement(e.target.files[0], root.querySelector('#st-acct').value).catch((err) => alert(err.message));
-  root.querySelector('#pk-files').onchange = (e) => e.target.files.length && toPaystubs([...e.target.files]);
-  root.querySelector('#vg-file').onchange = (e) => e.target.files[0] && vanguard(e.target.files[0], root.querySelector('#vg-acct').value).catch((err) => alert(err.message));
-  root.querySelector('#hx-go').onclick = () => history(root).catch((err) => alert(err.message));
+  // Every file read shows the progress panel; the input is cleared so choosing the same file again works.
+  const pick = (sel, label, fn) => root.querySelector(sel).onchange = (e) => {
+    const files = [...e.target.files]; e.target.value = ''; if (!files.length) return;
+    busy(label, () => fn(files), (r) => (r === 'handed-off' ? undefined : 'Ready to review below')).catch((err) => alert(err.message));
+  };
+  pick('#st-file', 'Reading statement', (f) => statement(f[0], root.querySelector('#st-acct').value));
+  pick('#vg-file', 'Reading Vanguard file', (f) => vanguard(f[0], root.querySelector('#vg-acct').value));
+  root.querySelector('#pk-files').onchange = (e) => { const files = [...e.target.files]; e.target.value = ''; if (files.length) toPaystubs(files); };
+  root.querySelector('#hx-go').onclick = () => busy('Reading spreadsheets', () => history(root), 'Ready to review below').catch((err) => alert(err.message));
 }
 export const views = { import: { render, mount } };
