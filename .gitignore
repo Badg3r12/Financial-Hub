@@ -1,0 +1,7 @@
+# Never publish personal data with the app code
+_local/
+*.csv
+*.xlsx
+*.pdf
+*.json
+!manifest.webmanifest

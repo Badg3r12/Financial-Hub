@@ -44,6 +44,22 @@ From then on, changes on either device show up on the other within seconds when 
 
 To update the app later, upload the changed files to the same GitHub repository again.
 
+## Automatic market data (free)
+
+A GitHub Action in the repository fetches closing prices every weekday evening and fund holdings once a month, and saves them in `data/`. The app reads them to update prices, draw a price chart and returns in each holding's detail, and to fill **Invest → Overlap & exposure** (how much your funds overlap, and how much of each company you own through all your funds and stocks). Nothing to pay and no keys. It runs on GitHub's computers, not on the Mac, and doesn't involve Claude.
+
+It only ever fetches a fixed, broad list of about 290 popular stocks and funds (`tools/universe.json`), so the public repository doesn't show what you own. To follow a new ticker, add it to that list.
+
+**One-time setup**
+1. In the repository: **Add file → Upload files** and drag in the `.github`, `tools` and `data` folders from `app` together with the changed files (`js/market.js`, `js/calc.js`, `js/views/invest.js`, `sw.js`, `README.md`). Commit. Finder hides `.github`: press **Cmd-Shift-.** in the Finder window to show it.
+2. Check the repository now lists `.github/workflows/market-data.yml`, `tools/market_data.py` and `tools/universe.json`. (If `.github` didn't upload, use **Add file → Create new file**, type `.github/workflows/market-data.yml` as the name and paste the file's contents.)
+3. **Settings → Actions → General**: allow actions, and under **Workflow permissions** choose **Read and write permissions**. Save.
+4. **Actions** tab → **Market data** → **Run workflow** → Run. It takes 15–25 minutes the first time (about 290 price histories); afterwards `data/` shows a new commit by `market-data-bot`, and the site updates a minute later.
+
+After that it runs by itself. If a run fails (a data site changed), GitHub emails you; the app keeps showing the last good data. Sources: Nasdaq's quote pages for prices (Yahoo as a backup), Vanguard's fund-holdings pages, the Nasdaq-100 list for QQQ (weights estimated from company size) and stockanalysis.com for the top 25 holdings of other ETFs such as SCHD.
+
+The 401(k) has no tickers, so its funds are matched by name in `K401_MAP` at the bottom of `js/calc.js` (Total Stock Market → VTI, Small Cap → VB). The target-date fund holds other funds and is left out of the company breakdown; the screen says so.
+
 ## Monthly routine
 
 1. **Statements as PDFs:** under Import → Bank or card statement, choose the monthly PDF. The app recognizes the JMCU member statement (Savings and Checking), the Discover it card statement and the Discover savings statement, and puts each row in the right account. Ending balances become net-worth snapshots. CSV and OFX exports also work; for those, pick the account first.
@@ -77,6 +93,8 @@ Take a screenshot in Ajera. On iPhone, open it in Photos, long-press the text an
 - `vendor/firebase/`: Google's Firebase web library, version 10.12.2, downloaded from gstatic.com on Nov 25, 2026. Its import links were changed to point at the local copies, so the app loads nothing from outside sites.
 - `js/sync.js`: sign-in and syncing with your Firebase project.
 - `js/store.js`: local database (IndexedDB). Every save goes through it.
-- `js/calc.js`: all totals (budget, holdings, net worth, goals).
+- `js/calc.js`: all totals (budget, holdings, net worth, goals, fund overlap and look-through).
+- `js/market.js`: loads `data/prices.json` and `data/holdings.json` and updates stored prices when they're newer.
+- `tools/market_data.py`, `.github/workflows/market-data.yml`: the free market-data job (Python standard library only).
 - `js/views/`: one file per screen.
 - `js/import/`: the Vanguard, bank CSV/OFX, spreadsheet (.xlsx) and paystub readers.
