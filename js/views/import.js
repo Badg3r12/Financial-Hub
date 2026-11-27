@@ -13,18 +13,21 @@ let pending = null; // preview waiting for confirmation
 function lastImport(acctId) { return S.all('imports').filter((i) => i.acctId === acctId).sort((a, b) => b.date.localeCompare(a.date))[0]; }
 
 function render() {
-  const bankAccts = S.all('accounts').filter((a) => !a.isInvestment && !a.closed && !/cash$/i.test(a.type)), inv = S.all('accounts').filter((a) => a.isInvestment || /cash plus/i.test(a.name));
+  const bankAccts = S.all('accounts').filter((a) => !a.isInvestment && !a.closed && !/cash$/i.test(a.type)), inv = S.all('accounts').filter((a) => (a.isInvestment || /cash plus/i.test(a.name)) && a.type !== 'Roth 401k'); // the 401(k) is with Ekon Benefits, not Vanguard
   return h`<h1>Import</h1>
   <div class="grid cols-2">
   <div class="card stack"><h2>Bank or card statement</h2>
     <p class="small muted">CSV, OFX or QFX from your bank's website. Rows go to the Inbox for review. Account and card number columns are thrown away when the file is read.</p>
     <label>Account<select id="st-acct">${options(bankAccts.map((a) => [a.id, a.name + (lastImport(a.id) ? ` (last ${shortDate(lastImport(a.id).date)})` : '')]))}</select></label>
-    <label>File<input type="file" id="st-file" accept=".csv,.ofx,.qfx,.pdf,text/csv,application/pdf"></label>
+    <label>File<input type="file" id="st-file" accept=".csv,.ofx,.qfx,.pdf"></label>
     <p class="small muted">PDF statements from JMCU, the Discover it card and Discover savings are recognized automatically and go to the right accounts (the account picker is only used for CSV and OFX). Ending balances become net-worth snapshots.</p></div>
   <div class="card stack"><h2>Vanguard file</h2>
     <p class="small muted">On vanguard.com: Transaction history → Download → spreadsheet-compatible CSV. <b>Select one account per download</b> so rows can be assigned without reading account numbers. Any file can still update prices.</p>
     <label>Account<select id="vg-acct">${options(inv.map((a) => [a.id, a.name]))}</select></label>
     <label>File<input type="file" id="vg-file" accept=".csv,text/csv"></label></div>
+  <div class="card stack"><h2>Paystubs and 401(k) statements</h2>
+    <p class="small muted">PDFs from Ajera (paystubs) and Ekon Benefits (quarterly Roth 401(k) statements). Choose several at once; each is read on this device and sorted automatically. You can also drop them in the bank statement box above.</p>
+    <label class="btn btn-primary">Choose PDFs<input type="file" id="pk-files" accept=".pdf,.png,.jpg,.jpeg,.heic" multiple hidden></label></div>
   <div class="card stack"><h2>History from the spreadsheets</h2>
     <p class="small muted">One time. In Google Sheets: File → Download → Microsoft Excel (.xlsx), for Budget and for Stock_Tracker. Importing again replaces the earlier import.${S.setting('historyImported', null) ? ` Last imported ${shortDate(S.setting('historyImported').slice(0, 10))}.` : ''}</p>
     <label>Budget.xlsx<input type="file" id="hx-budget" accept=".xlsx"></label>
@@ -44,6 +47,13 @@ function showPreview(html, onCommit, label = 'Import') {
 
 const byName = (n) => S.all('accounts').find((a) => a.name === n);
 
+// Paystub and 401(k) PDFs are read on the Paystubs & 401k screen, which shows progress and the results.
+async function toPaystubs(files) {
+  location.hash = '#paystubs';
+  await new Promise((r) => setTimeout(r, 150));
+  (await import('./more.js')).readFiles(files, 'auto', document.getElementById('main'));
+}
+
 // PDF statements pick their own accounts: JMCU (savings + checking), the Discover it card, Discover savings.
 async function readPdfStatement(file) {
   const P = await import('../import/pdf.js'), pages = await P.pdfLines(file), type = P.detect(pages);
@@ -58,12 +68,16 @@ async function readPdfStatement(file) {
   }
   if (type === 'card') { const c = P.parseCard(pages), a = byName('Discover it card'); return { label: 'Discover it card statement', groups: [{ acctId: a.id, rows: c.rows }], snaps: c.end != null ? [{ acctId: a.id, date: c.endDate, balance: c.end }] : [] }; }
   if (type === 'discoverBank') { const d = P.parseDiscoverBank(pages), a = byName('Discover Savings'); return { label: 'Discover savings statement (balance only)', groups: [], snaps: d.end != null ? [{ acctId: a.id, date: d.endDate, balance: d.end }] : [] }; }
-  throw new Error("This PDF isn't a statement layout the app knows yet (JMCU, Discover it card, Discover savings). Use a CSV export or add a balance snapshot.");
+  return null; // not a bank layout: likely a paystub or 401(k) statement (image-only or scrambled text)
 }
 
 async function statement(file, acctId) {
   let groups, snaps = [], label;
-  if (/\.pdf$/i.test(file.name)) ({ groups, snaps, label } = await readPdfStatement(file));
+  if (/\.pdf$/i.test(file.name)) {
+    const r = await readPdfStatement(file);
+    if (!r) return toPaystubs([file]); // the paystub/401(k) reader says so if it can't read it either
+    ({ groups, snaps, label } = r);
+  }
   else {
     const a = C.acct(acctId), text = await file.text();
     const parsed = /\.(ofx|qfx)$/i.test(file.name) || /<OFX>/i.test(text) ? parseOFX(text) : parseBankCSV(text, { isCard: !!a.isLiability });
@@ -143,6 +157,7 @@ async function history(root) {
 
 function mount(root) {
   root.querySelector('#st-file').onchange = (e) => e.target.files[0] && statement(e.target.files[0], root.querySelector('#st-acct').value).catch((err) => alert(err.message));
+  root.querySelector('#pk-files').onchange = (e) => e.target.files.length && toPaystubs([...e.target.files]);
   root.querySelector('#vg-file').onchange = (e) => e.target.files[0] && vanguard(e.target.files[0], root.querySelector('#vg-acct').value).catch((err) => alert(err.message));
   root.querySelector('#hx-go').onclick = () => history(root).catch((err) => alert(err.message));
 }
