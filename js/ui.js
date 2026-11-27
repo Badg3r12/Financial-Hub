@@ -13,6 +13,46 @@ document.addEventListener('click', (e) => { if (e.target.id === 'sheet') closeSh
 let tt;
 export function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), 2600); }
 
+// Progress panel for anything that reads or saves files. Stays put while screens redraw.
+// const pr = progress('Reading statement'); pr.set(0.4, 'Page 2 of 5'); pr.done('Saved');  (set(null) = working, no %)
+let prEl = null, prHide;
+function prPanel() {
+  if (!prEl) {
+    prEl = document.createElement('div'); prEl.id = 'progress'; prEl.setAttribute('role', 'status');
+    prEl.innerHTML = '<div class="pr-row"><span class="pr-label"></span><span class="pr-pct num"></span></div><div class="pr-track" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div class="pr-fill"></div></div><div class="pr-sub small muted"></div>';
+    document.body.append(prEl);
+  }
+  return prEl;
+}
+export function progress(label) {
+  const el = prPanel(); clearTimeout(prHide);
+  const q = (c) => el.querySelector(c), track = q('.pr-track'), fill = q('.pr-fill');
+  el.classList.remove('done', 'failed'); el.classList.add('show');
+  const api = {
+    set(frac, sub, newLabel) {
+      if (newLabel) q('.pr-label').textContent = newLabel;
+      if (sub !== undefined) q('.pr-sub').textContent = sub || '';
+      if (frac == null) { track.classList.add('busy'); fill.style.width = ''; q('.pr-pct').textContent = ''; track.removeAttribute('aria-valuenow'); return api; }
+      const pct = Math.max(0, Math.min(100, Math.round(frac * 100)));
+      track.classList.remove('busy'); fill.style.width = pct + '%'; q('.pr-pct').textContent = pct + '%'; track.setAttribute('aria-valuenow', pct);
+      return api;
+    },
+    done(msg, failed) {
+      api.set(1, msg || ''); el.classList.add(failed ? 'failed' : 'done');
+      if (failed) q('.pr-pct').textContent = '';
+      prHide = setTimeout(() => el.classList.remove('show'), failed ? 6000 : 2200);
+    },
+    fail(msg) { api.done(msg || 'Something went wrong', true); },
+  };
+  q('.pr-label').textContent = label; return api.set(null, '');
+}
+// Run an async job with an indeterminate progress panel.
+export async function busy(label, fn, doneMsg = 'Done') {
+  const pr = progress(label);
+  try { const r = await fn(pr); pr.done(typeof doneMsg === 'function' ? doneMsg(r) : doneMsg); return r; }
+  catch (e) { pr.fail(e.message); throw e; }
+}
+
 export function confirmBox(msg) { return window.confirm(msg); }
 
 // Read a form into a plain object.
