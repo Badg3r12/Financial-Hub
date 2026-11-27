@@ -254,3 +254,18 @@ table td, table th { font-variant-numeric: tabular-nums; }
 /* Keep page headers clear of the privacy button. */
 .top-actions + .row.between, .top-actions + h1, .top-actions + .back-btn + .row.between, .top-actions + .back-btn + h1, .top-actions + .glance > h1, .top-actions + .back-btn + .glance > h1 { padding-right: 52px; }
 .top-actions + .back-btn { margin-right: 52px; }
+
+/* ---- Page headers and tab rows ---- */
+/* A title row whose buttons wrap under the title keeps clear space before the tabs below it. */
+.row.between:has(> h1) { row-gap: 6px; margin-bottom: 12px; align-items: center; }
+.row.between:has(> h1) > h1 { margin: 4px 0; }
+.row.between:has(> h1) > .row { gap: 8px; }
+@media (max-width: 767px) {
+  /* Tabs: one row you swipe sideways instead of stacking 3–4 rows of pills. */
+  .tabs:not([role=radiogroup]) { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; margin: 0 -16px 14px; padding: 2px 16px; scroll-padding: 0 16px;
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 12px, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(90deg, transparent 0, #000 12px, #000 calc(100% - 24px), transparent); }
+  .tabs:not([role=radiogroup])::-webkit-scrollbar { display: none; }
+  .tabs a, .tabs button, .tabs .seg { flex: none; white-space: nowrap; }
+  /* Header buttons: smaller, so a title and two buttons usually fit on one line. */
+  .row.between:has(> h1) > .row button, .row.between:has(> h1) > .row .btn, .row.between:has(> h1) > button { padding: 7px 12px; font-size: 14px; }
+}
